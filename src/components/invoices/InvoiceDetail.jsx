@@ -50,15 +50,42 @@ export default function InvoiceDetail({ invoice, onBack, onStatusChange }) {
   };
 
   const handleDownloadPDF = async () => {
-    /* mock no-op */
+    setDownloading('pdf');
+    const anchor = document.createElement('a');
+    anchor.href = `/api/v1/documents/pdf?type=invoice&id=${encodeURIComponent(invoice.id)}`;
+    anchor.download = `${invNum}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setDownloading(null);
   };
 
   const handleDownloadExcel = async () => {
-    /* mock no-op */
+    setDownloading('excel');
+    const XLSX = await import('xlsx');
+    const rows = (invoice.line_items || []).map((item) => ({
+      Patient: item.patient_name,
+      Date: item.visit_date,
+      Therapist: item.therapist_name,
+      Discipline: item.therapy_type,
+      'Visit Type': item.visit_type,
+      Rate: item.rate,
+    }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Invoice');
+    XLSX.writeFile(workbook, `${invNum}.xlsx`);
+    setDownloading(null);
   };
 
   const handleDownloadVisitNotes = async () => {
-    /* mock no-op */
+    setDownloading('notes');
+    const anchor = document.createElement('a');
+    anchor.href = `/api/v1/documents/pdf?type=invoice-notes&id=${encodeURIComponent(invoice.id)}`;
+    anchor.download = `visit-notes-${invNum}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setDownloading(null);
   };
 
   return (
@@ -94,7 +121,7 @@ export default function InvoiceDetail({ invoice, onBack, onStatusChange }) {
           <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={!!downloading} className="gap-2">
             <FileDown className="w-4 h-4" />{downloading === 'pdf' ? 'Generating...' : 'PDF'}
           </Button>
-          <SendPdfDialog documentName={`invoice ${invNum}`} defaultSubject={`Invoice ${invNum}`} />
+          <SendPdfDialog documentName={`invoice ${invNum}`} defaultSubject={`Invoice ${invNum}`} documentType="invoice" documentId={invoice.id} />
           <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={!!downloading} className="gap-2">
             <FileSpreadsheet className="w-4 h-4" />{downloading === 'excel' ? 'Generating...' : 'Excel'}
           </Button>

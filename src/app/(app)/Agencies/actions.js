@@ -90,6 +90,7 @@ export async function getAgencies() {
   await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
   const agencies = await prisma.agency.findMany({
+    where: { status: "ACTIVE" },
     include: {
       contacts: true,
       rates: true,

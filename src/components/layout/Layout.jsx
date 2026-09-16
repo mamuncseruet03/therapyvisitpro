@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "./sign-out-action";
@@ -31,7 +31,8 @@ import {
 import { Button } from "@/components/ui/button";
 import AnnouncementBar from "./AnnouncementBar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { getUsersForSelect } from "@/lib/api-client/tasks";
 
 const NAV = [
   { name: "Dashboard", icon: LayoutDashboard, page: "Dashboard", href: "/" },
@@ -47,6 +48,7 @@ const NAV = [
   { name: "Visit Notes", icon: FileText, page: "VisitNotes", href: "/VisitNotes" },
   { name: "Visit Calendar", icon: CalendarDays, page: "VisitCalendar", href: "/VisitCalendar" },
   { name: "Agencies", icon: Activity, page: "Agencies", href: "/Agencies" },
+  { name: "Invoices", icon: Receipt, page: "AgencyInvoices", href: "/Invoices" },
   { name: "Billing", icon: Receipt, page: "Invoices", href: "/Invoices", submenu: [
     "Invoice Manager",
     "Edit Special Pricing",
@@ -88,10 +90,25 @@ export default function Layout({ children, user }) {
   const [billingOpen, setBillingOpen] = useState(false);
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [impersonateOpen, setImpersonateOpen] = useState(false);
-  const [impersonatedType, setImpersonatedType] = useState("");
+  const [impersonatedUser, setImpersonatedUser] = useState(null);
+  const [impersonationUsers, setImpersonationUsers] = useState([]);
+  const [impersonationSearch, setImpersonationSearch] = useState("");
+
+  useEffect(() => {
+    if (user?.user_type === "superuser") {
+      getUsersForSelect().then(setImpersonationUsers).catch(() => setImpersonationUsers([]));
+    }
+  }, [user?.user_type]);
+
+  const filteredImpersonationUsers = useMemo(() => {
+    const query = impersonationSearch.trim().toLowerCase();
+    return impersonationUsers.filter((candidate) =>
+      !query || `${candidate.full_name || ""} ${candidate.email || ""} ${candidate.user_type || ""}`.toLowerCase().includes(query)
+    );
+  }, [impersonationSearch, impersonationUsers]);
 
   const effectiveUser = user
-    ? { ...user, user_type: impersonatedType || user.user_type, role: impersonatedType || user.role }
+    ? { ...user, ...(impersonatedUser || {}) }
     : { user_type: "therapist", full_name: "User" };
   const isAdmin = ["admin", "superuser", "hr"].includes(effectiveUser?.user_type);
   const isSuperuser = effectiveUser?.user_type === "superuser";
@@ -195,11 +212,11 @@ export default function Layout({ children, user }) {
         {user?.user_type === "superuser" && (
           <Button variant="outline" className="mb-2 w-full justify-start gap-3" onClick={() => setImpersonateOpen(true)}>
             <Users className="h-[18px] w-[18px]" />
-            {impersonatedType ? "Change Impersonation" : "Impersonate User"}
+            {impersonatedUser ? "Change Impersonation" : "Impersonate User"}
           </Button>
         )}
-        {impersonatedType && (
-          <Button variant="ghost" className="mb-2 w-full text-xs text-teal-700" onClick={() => setImpersonatedType("")}>
+        {impersonatedUser && (
+          <Button variant="ghost" className="mb-2 w-full text-xs text-teal-700" onClick={() => setImpersonatedUser(null)}>
             Return to Superuser
           </Button>
         )}
@@ -221,17 +238,20 @@ export default function Layout({ children, user }) {
       <Dialog open={impersonateOpen} onOpenChange={setImpersonateOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Impersonate User</DialogTitle></DialogHeader>
-          <Select value={impersonatedType} onValueChange={(value) => { setImpersonatedType(value); setImpersonateOpen(false); }}>
-            <SelectTrigger><SelectValue placeholder="Choose a user role" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">Administrator</SelectItem>
-              <SelectItem value="coordinator">Coordinator</SelectItem>
-              <SelectItem value="therapist">Therapist</SelectItem>
-              <SelectItem value="hr">HR</SelectItem>
-              <SelectItem value="client">Client</SelectItem>
-              <SelectItem value="guest">Guest</SelectItem>
-            </SelectContent>
-          </Select>
+          <Input placeholder="Search users..." value={impersonationSearch} onChange={(event) => setImpersonationSearch(event.target.value)} />
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {filteredImpersonationUsers.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                onClick={() => { setImpersonatedUser(candidate); setImpersonateOpen(false); setImpersonationSearch(""); }}
+              >
+                <span className="text-sm font-medium">{candidate.full_name || candidate.email}</span>
+                <span className="text-xs text-slate-500">{candidate.user_type}</span>
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
       {/* Desktop sidebar */}

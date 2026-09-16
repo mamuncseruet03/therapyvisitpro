@@ -52,6 +52,18 @@ export async function getUsers() {
   await requireRole("SUPERUSER", "ADMIN");
 
   const users = await prisma.user.findMany({
+    where: {
+      email: {
+        in: [
+          "compliance1@aaahealthgroup.com",
+          "ameya@aaahealthgroup.com",
+          "intake2@aaahealthgroup.com",
+          "rehab@aaahealthgroup.com",
+          "adorsatwar@apexrehabgroup.com",
+          "dorsatwar.ameya@gmail.com",
+        ],
+      },
+    },
     select: {
       id: true,
       email: true,

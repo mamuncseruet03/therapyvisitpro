@@ -361,7 +361,9 @@ export default function Patients() {
                     <TableCell className="hidden lg:table-cell">
                       <div className="flex gap-1 flex-wrap">
                         {(p.therapy_types || []).map((t) => (
-                          <Badge key={t} variant="outline" className="text-xs">{t.replace(" Therapy", "")}</Badge>
+                          <Badge key={t} variant="outline" className="text-xs">
+                            {{ physical_therapy: "Physical", occupational_therapy: "Occupational", speech_therapy: "Speech" }[t] || t.replace(" Therapy", "")}
+                          </Badge>
                         ))}
                         {(!p.therapy_types || p.therapy_types.length === 0) && <span className="text-slate-500">—</span>}
                       </div>

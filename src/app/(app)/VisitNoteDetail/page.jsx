@@ -102,14 +102,14 @@ function VisitNoteDetailContent() {
   };
 
   const handleDownloadPDF = async () => {
-    try {
-      setIsDownloading(true);
-      toast.info("PDF generation is not yet implemented");
-    } catch (error) {
-      toast.error('Failed to download PDF');
-    } finally {
-      setIsDownloading(false);
-    }
+    setIsDownloading(true);
+    const anchor = document.createElement("a");
+    anchor.href = `/api/v1/documents/pdf?type=visit&id=${encodeURIComponent(id)}`;
+    anchor.download = `visit-note-${id}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setIsDownloading(false);
   };
 
   if (isLoading) {
@@ -153,6 +153,8 @@ function VisitNoteDetailContent() {
         <SendPdfDialog
           documentName={`visit note for ${visit.patient_name}`}
           defaultSubject={`Visit Note - ${visit.patient_name}`}
+          documentType="visit"
+          documentId={id}
         />
         {isAdmin && (visit.status === "completed" || visit.status === "signed") && (
           <Button

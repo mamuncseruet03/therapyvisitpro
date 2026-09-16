@@ -66,6 +66,7 @@ export async function getTherapists() {
   await requireRole("SUPERUSER", "ADMIN", "COORDINATOR", "HR");
 
   const therapists = await prisma.therapist.findMany({
+    where: { status: "ACTIVE" },
     orderBy: { fullName: "asc" },
   });
 

@@ -35,7 +35,9 @@ export default function SuperuserDashboard() {
     return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
   };
   const monthToDateVisits = visits.filter((v) => isThisMonth(v.visit_date)).length;
-  const monthToDateNewPatients = patients.filter((p) => isThisMonth(p.created_at)).length;
+  const monthToDateNewPatients = patients.filter(
+    (p) => p.status === "active" && isThisMonth(p.created_at)
+  ).length;
   const monthToDateDischarges = patients.filter(
     (p) => p.status === "discharged" && isThisMonth(p.updated_at)
   ).length;

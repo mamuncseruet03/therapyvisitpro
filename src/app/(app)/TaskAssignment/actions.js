@@ -186,7 +186,19 @@ export async function getUsersForSelect() {
   await requireAuth();
 
   const users = await prisma.user.findMany({
-    select: { id: true, email: true, fullName: true },
+    where: {
+      email: {
+        in: [
+          "compliance1@aaahealthgroup.com",
+          "ameya@aaahealthgroup.com",
+          "intake2@aaahealthgroup.com",
+          "rehab@aaahealthgroup.com",
+          "adorsatwar@apexrehabgroup.com",
+          "dorsatwar.ameya@gmail.com",
+        ],
+      },
+    },
+    select: { id: true, email: true, fullName: true, userType: true, role: true, therapistId: true },
     orderBy: { fullName: "asc" },
   });
 
@@ -194,5 +206,8 @@ export async function getUsersForSelect() {
     id: u.id,
     email: u.email,
     full_name: u.fullName,
+    user_type: u.userType?.toLowerCase(),
+    role: u.role?.toLowerCase(),
+    therapist_id: u.therapistId,
   }));
 }

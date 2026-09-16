@@ -121,6 +121,7 @@ export async function getPatients() {
   await requireAuth();
 
   const patients = await prisma.patient.findMany({
+    where: { status: "ACTIVE" },
     include: {
       agency: { select: { name: true } },
       diagnoses: { orderBy: { isPrimary: "desc" } },
