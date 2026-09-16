@@ -1,0 +1,669 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+// ─────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  USER
+  SUPERUSER
+}
+
+enum UserType {
+  SUPERUSER
+  ADMIN
+  THERAPIST
+  COORDINATOR
+  HR
+  GUEST
+  CLIENT
+}
+
+enum Discipline {
+  PT
+  OT
+  ST
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum PatientStatus {
+  ACTIVE
+  DISCHARGED
+  ON_HOLD
+}
+
+enum TherapistStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TherapyType {
+  PHYSICAL_THERAPY
+  OCCUPATIONAL_THERAPY
+  SPEECH_THERAPY
+}
+
+enum VisitType {
+  EVALUATION
+  TREATMENT
+  RE_EVALUATION
+  RECERTIFICATION
+  DISCHARGE_WITH_VISIT
+  DISCHARGE_WITHOUT_VISIT
+  EVAL_REFUSED
+  MISSED_VISIT
+}
+
+enum VisitStatus {
+  DRAFT
+  SCHEDULED
+  COMPLETED
+  SIGNED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  PARTIAL_PAID
+  VOID
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  ESCALATED
+}
+
+enum AuditAction {
+  VIEW
+  CREATE
+  UPDATE
+  DELETE
+  EXPORT
+  SIGN
+  LOGIN
+  LOGOUT
+}
+
+enum NoteType {
+  GENERAL
+  CLINICAL
+  BILLING
+  URGENT
+}
+
+enum NotificationType {
+  COMMUNICATION_NOTE
+  TASK
+  GENERAL
+  HR_ALERT
+}
+
+enum ReferralSourceType {
+  MANUAL
+  PDF_IMPORT
+}
+
+enum PatientAction {
+  CREATED
+  UPDATED
+  SKIPPED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  SCHEDULED
+}
+
+enum DeletionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AnnouncementColor {
+  BLUE
+  AMBER
+  GREEN
+  RED
+}
+
+enum AgencyDocMode {
+  THERADOCS
+  AGENCY_DOCS
+}
+
+// ─────────────────────────────────────────────────
+// Core tables
+// ─────────────────────────────────────────────────
+
+model User {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  passwordHash  String      @map("password_hash")
+  fullName      String?     @map("full_name")
+  phone         String?
+  role          Role        @default(USER)
+  userType      UserType    @map("user_type")
+  therapistId   String?     @unique @map("therapist_id")
+  therapist     Therapist?  @relation(fields: [therapistId], references: [id])
+  credentials   String?
+  licenseNumber String?     @map("license_number")
+  discipline    Discipline?
+
+  auditLogs     AuditLog[]
+  notifications Notification[] @relation("recipient")
+  apiKeys       ApiKey[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id])
+  hashedKey  String    @unique @map("hashed_key")
+  label      String?
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("api_keys")
+}
+
+model Patient {
+  id                  String        @id @default(uuid())
+  firstName           String        @map("first_name")
+  lastName            String        @map("last_name")
+  dateOfBirth         DateTime?     @map("date_of_birth") @db.Date
+  sex                 Sex?
+  ssnEncrypted        String?       @map("ssn_encrypted")
+  medicareNumber      String?       @map("medicare_number")
+  phone               String?
+  email               String?
+  address             String?
+  city                String?
+  state               String?
+  zip                 String?
+  agencyId            String?       @map("agency_id")
+  agency              Agency?       @relation(fields: [agencyId], references: [id])
+  insurance           String?
+  coordinatorEmail    String?       @map("coordinator_email")
+  certPeriodStart     DateTime?     @map("cert_period_start") @db.Date
+  certPeriodEnd       DateTime?     @map("cert_period_end") @db.Date
+  authorizationNumber String?       @map("authorization_number")
+  authorizedVisits    Int?          @map("authorized_visits")
+  therapyTypes        TherapyType[] @map("therapy_types")
+  notes               String?
+  status              PatientStatus @default(ACTIVE)
+
+  visitCounts        Json? @map("visit_counts") @db.JsonB
+  assignedTherapists Json? @map("assigned_therapists") @db.JsonB
+  responsibleParty   Json? @map("responsible_party") @db.JsonB
+  physicians         Json? @db.JsonB
+
+  diagnoses          PatientDiagnosis[]
+  visitNotes         VisitNote[]
+  referrals          Referral[]
+  assignments        ReferralAssignment[]
+  communicationNotes CommunicationNote[]
+  deletionRequests   DeletionRequest[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([lastName, firstName])
+  @@index([status])
+  @@index([agencyId])
+  @@map("patients")
+}
+
+model PatientDiagnosis {
+  id        String  @id @default(uuid())
+  patientId String  @map("patient_id")
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  diagnosis String
+  icd10Code String? @map("icd10_code")
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  @@index([patientId])
+  @@map("patient_diagnoses")
+}
+
+model Therapist {
+  id               String          @id @default(uuid())
+  fullName         String          @map("full_name")
+  discipline       Discipline
+  credentials      String?
+  licenseNumber    String?         @map("license_number")
+  email            String?
+  phone            String?
+  hireDate         DateTime?       @map("hire_date") @db.Date
+  annualReviewDate DateTime?       @map("annual_review_date") @db.Date
+  status           TherapistStatus @default(ACTIVE)
+  facilities       String[]
+
+  rates               Json? @db.JsonB
+  personalFiles       Json? @map("personal_files") @db.JsonB
+  disciplinaryActions Json? @map("disciplinary_actions") @db.JsonB
+
+  user                    User?
+  visitNotes              VisitNote[]
+  assignments             ReferralAssignment[] @relation("primary_therapist")
+  supervisedAssignments   ReferralAssignment[] @relation("supervising_therapist")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([discipline])
+  @@index([status])
+  @@map("therapists")
+}
+
+model VisitNote {
+  id            String      @id @default(uuid())
+  patientId     String      @map("patient_id")
+  patient       Patient     @relation(fields: [patientId], references: [id])
+  patientName   String      @map("patient_name")
+  therapistId   String      @map("therapist_id")
+  therapist     Therapist   @relation(fields: [therapistId], references: [id])
+  therapistName String      @map("therapist_name")
+  visitDate     DateTime    @map("visit_date") @db.Date
+  therapyType   TherapyType @map("therapy_type")
+  visitType     VisitType?  @map("visit_type")
+  agencyId      String?     @map("agency_id")
+  status        VisitStatus @default(DRAFT)
+  durationMinutes Int?      @map("duration_minutes")
+  timeIn        String?     @map("time_in")
+  timeOut       String?     @map("time_out")
+  nonBillable   Boolean     @default(false) @map("non_billable")
+  specialPrice  Decimal?    @map("special_price") @db.Decimal(10, 2)
+  cptCodes      String[]    @map("cpt_codes")
+
+  includeSocOasis       Boolean @default(false) @map("include_soc_oasis")
+  includeRocOasis       Boolean @default(false) @map("include_roc_oasis")
+  requireDischargeOasis Boolean @default(false) @map("require_discharge_oasis")
+  includeNomnc          Boolean @default(false) @map("include_nomnc")
+
+  treatmentApproved     Boolean?  @map("treatment_approved")
+  treatmentApprovedDate DateTime? @map("treatment_approved_date")
+
+  // Clinical data stored as JSONB for flexibility
+  vitals          Json? @db.JsonB
+  painAssessment  Json? @map("pain_assessment") @db.JsonB
+  subjectiveData  Json? @map("subjective_data") @db.JsonB
+  objectiveData   Json? @map("objective_data") @db.JsonB
+  mobilityData    Json? @map("mobility_data") @db.JsonB
+  adlData         Json? @map("adl_data") @db.JsonB
+  soapNotes       Json? @map("soap_notes") @db.JsonB
+  assessmentData  Json? @map("assessment_data") @db.JsonB
+  goalsPlan       Json? @map("goals_plan") @db.JsonB
+  therapyOrders   Json? @map("therapy_orders") @db.JsonB
+  dcPlanEducation Json? @map("dc_plan_education") @db.JsonB
+  nomncData       Json? @map("nomnc_data") @db.JsonB
+  dischargeData   Json? @map("discharge_data") @db.JsonB
+  reevalData      Json? @map("reeval_data") @db.JsonB
+  signatures      Json? @db.JsonB
+  timeTracking    Json? @map("time_tracking") @db.JsonB
+  documents       Json? @db.JsonB
+  visitDiagnoses  Json? @map("visit_diagnoses") @db.JsonB
+  patientIdMethod Json? @map("patient_id_method") @db.JsonB
+  oasisData       Json? @map("oasis_data") @db.JsonB
+  ptaSupervision  Json? @map("pta_supervision") @db.JsonB
+  missedVisitData Json? @map("missed_visit_data") @db.JsonB
+
+  invoiceLineItems InvoiceLineItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([patientId])
+  @@index([therapistId])
+  @@index([visitDate])
+  @@index([status])
+  @@index([therapyType])
+  @@index([visitType])
+  @@index([agencyId])
+  @@map("visit_notes")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique @map("invoice_number")
+  agencyId      String        @map("agency_id")
+  agency        Agency        @relation(fields: [agencyId], references: [id])
+  agencyName    String        @map("agency_name")
+  dateFrom      DateTime      @map("date_from") @db.Date
+  dateTo        DateTime      @map("date_to") @db.Date
+  totalAmount   Decimal       @map("total_amount") @db.Decimal(10, 2)
+  status        InvoiceStatus @default(DRAFT)
+  notes         String?
+  checkDetails  Json?         @map("check_details") @db.JsonB
+
+  lineItems InvoiceLineItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([agencyId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id            String    @id @default(uuid())
+  invoiceId     String    @map("invoice_id")
+  invoice       Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  visitNoteId   String    @map("visit_note_id")
+  visitNote     VisitNote @relation(fields: [visitNoteId], references: [id])
+  patientName   String    @map("patient_name")
+  visitDate     DateTime  @map("visit_date") @db.Date
+  therapyType   String    @map("therapy_type")
+  visitType     String    @map("visit_type")
+  therapistName String    @map("therapist_name")
+  rate          Decimal   @db.Decimal(10, 2)
+  quantity      Int       @default(1)
+  subtotal      Decimal   @db.Decimal(10, 2)
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+model Agency {
+  id                        String          @id @default(uuid())
+  name                      String
+  address                   String?
+  city                      String?
+  state                     String?
+  zip                       String?
+  phone                     String?
+  fax                       String?
+  email                     String?
+  documentMode              AgencyDocMode   @default(THERADOCS) @map("document_mode")
+  assistantsAllowed         Boolean         @default(true) @map("assistants_allowed")
+  supervisoryVisitFrequency Int?            @map("supervisory_visit_frequency")
+  workWeekStartDay          Int             @default(0) @map("work_week_start_day")
+  documentationSetup        Json?           @map("documentation_setup") @db.JsonB
+  requiredVisitDocuments    String[]        @map("required_visit_documents")
+  agencyDocuments           Json?           @map("agency_documents") @db.JsonB
+  notes                     String?
+  status                    TherapistStatus @default(ACTIVE)
+
+  contacts AgencyContact[]
+  rates    AgencyRate[]
+  invoices Invoice[]
+  patients Patient[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("agencies")
+}
+
+model AgencyContact {
+  id       String @id @default(uuid())
+  agencyId String @map("agency_id")
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  name     String
+  title    String?
+  phone    String?
+  email    String?
+
+  @@index([agencyId])
+  @@map("agency_contacts")
+}
+
+model AgencyRate {
+  id          String  @id @default(uuid())
+  agencyId    String  @map("agency_id")
+  agency      Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  therapyType String  @map("therapy_type")
+  visitType   String  @map("visit_type")
+  rate        Decimal @db.Decimal(10, 2)
+
+  @@unique([agencyId, therapyType, visitType])
+  @@map("agency_rates")
+}
+
+model Referral {
+  id            String              @id @default(uuid())
+  firstName     String              @map("first_name")
+  lastName      String              @map("last_name")
+  dateOfBirth   DateTime?           @map("date_of_birth") @db.Date
+  phone         String?
+  referralDate  DateTime?           @map("referral_date") @db.Date
+  sourceType    ReferralSourceType? @map("source_type")
+  patientId     String?             @map("patient_id")
+  patient       Patient?            @relation(fields: [patientId], references: [id])
+  patientAction PatientAction?      @map("patient_action")
+  clinicalData  Json?               @map("clinical_data") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([patientId])
+  @@map("referrals")
+}
+
+model ReferralAssignment {
+  id                       String           @id @default(uuid())
+  patientId                String           @map("patient_id")
+  patient                  Patient          @relation(fields: [patientId], references: [id])
+  patientName              String           @map("patient_name")
+  therapistId              String?          @map("therapist_id")
+  therapist                Therapist?       @relation("primary_therapist", fields: [therapistId], references: [id])
+  therapistName            String?          @map("therapist_name")
+  supervisingTherapistId   String?          @map("supervising_therapist_id")
+  supervisingTherapist     Therapist?       @relation("supervising_therapist", fields: [supervisingTherapistId], references: [id])
+  supervisingTherapistName String?          @map("supervising_therapist_name")
+  therapyType              Discipline       @map("therapy_type")
+  visitType                String           @map("visit_type")
+  agency                   String?
+  status                   AssignmentStatus @default(PENDING)
+  evalVisitNoteId          String?          @map("eval_visit_note_id")
+  approvedWeeklyVisits     Json?            @map("approved_weekly_visits") @db.JsonB
+  assignmentHistory        Json?            @map("assignment_history") @db.JsonB
+  declinedBy               String?          @map("declined_by")
+  declinedReason           String?          @map("declined_reason")
+  recalledFrom             String?          @map("recalled_from")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([patientId])
+  @@index([therapistId])
+  @@index([status])
+  @@map("referral_assignments")
+}
+
+model Task {
+  id               String       @id @default(uuid())
+  title            String
+  description      String?
+  assignedTo       String       @map("assigned_to")
+  assignedToName   String?      @map("assigned_to_name")
+  dueDate          DateTime?    @map("due_date") @db.Date
+  priority         TaskPriority @default(MEDIUM)
+  status           TaskStatus   @default(PENDING)
+  isDailyRecurring Boolean      @default(false) @map("is_daily_recurring")
+  completedDate    DateTime?    @map("completed_date") @db.Date
+  notes            String?
+  escalationData   Json?        @map("escalation_data") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([assignedTo])
+  @@index([status])
+  @@map("tasks")
+}
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  userId        String?     @map("user_id")
+  user          User?       @relation(fields: [userId], references: [id])
+  userName      String?     @map("user_name")
+  userEmail     String?     @map("user_email")
+  action        AuditAction
+  resourceType  String?     @map("resource_type")
+  resourceId    String?     @map("resource_id")
+  resourceLabel String?     @map("resource_label")
+  details       String?
+  ipAddress     String?     @map("ip_address")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model CompanyInfo {
+  id              String  @id @default(uuid())
+  companyName     String? @map("company_name")
+  logoUrl         String? @map("logo_url")
+  tagline         String?
+  description     String?
+  phone           String?
+  email           String?
+  address         Json?   @db.JsonB
+  businessHours   Json?   @map("business_hours") @db.JsonB
+  menuPermissions Json?   @map("menu_permissions") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("company_info")
+}
+
+model CommunicationNote {
+  id          String   @id @default(uuid())
+  patientId   String   @map("patient_id")
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientName String   @map("patient_name")
+  authorId    String?  @map("author_id")
+  authorName  String?  @map("author_name")
+  authorEmail String?  @map("author_email")
+  note        String
+  noteType    NoteType @default(GENERAL) @map("note_type")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([patientId])
+  @@map("communication_notes")
+}
+
+model Announcement {
+  id       String            @id @default(uuid())
+  message  String
+  isActive Boolean           @default(true) @map("is_active")
+  color    AnnouncementColor @default(BLUE)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("announcements")
+}
+
+model CoordinatorTimeLog {
+  id               String    @id @default(uuid())
+  coordinatorId    String    @map("coordinator_id")
+  coordinatorName  String    @map("coordinator_name")
+  coordinatorEmail String?   @map("coordinator_email")
+  clockIn          DateTime  @map("clock_in")
+  clockOut         DateTime? @map("clock_out")
+  logDate          DateTime  @map("log_date") @db.Date
+  durationMinutes  Int?      @map("duration_minutes")
+  notes            String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([coordinatorId])
+  @@index([logDate])
+  @@map("coordinator_time_logs")
+}
+
+model DeletionRequest {
+  id              String         @id @default(uuid())
+  patientId       String         @map("patient_id")
+  patient         Patient        @relation(fields: [patientId], references: [id])
+  patientName     String         @map("patient_name")
+  patientSnapshot Json?          @map("patient_snapshot") @db.JsonB
+  requestedBy     String         @map("requested_by")
+  requestedByName String?        @map("requested_by_name")
+  reason          String
+  approvedBy      String?        @map("approved_by")
+  approvedByName  String?        @map("approved_by_name")
+  approvedAt      DateTime?      @map("approved_at")
+  status          DeletionStatus @default(PENDING)
+  visitNotesCount Int?           @map("visit_notes_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("deletion_requests")
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  recipientEmail String           @map("recipient_email")
+  recipientId    String?          @map("recipient_id")
+  recipient      User?            @relation("recipient", fields: [recipientId], references: [id])
+  title          String
+  message        String
+  link           String?
+  isRead         Boolean          @default(false) @map("is_read")
+  type           NotificationType @default(GENERAL)
+  relatedId      String?          @map("related_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([recipientEmail])
+  @@index([recipientId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model DocumentLibrary {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  category    String?
+  fileUrl     String? @map("file_url")
+  fileName    String? @map("file_name")
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("document_library")
+}
