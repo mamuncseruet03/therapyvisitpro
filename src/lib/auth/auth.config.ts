@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import type { SessionUser } from "./types";
+import { hasApiAccessByPath, hasRouteAccessByPath } from "@/lib/rbac/permissions";
 
 export const authConfig = {
   session: {
@@ -37,14 +38,34 @@ export const authConfig = {
     },
     async authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
-      const isAuthPage = request.nextUrl.pathname.startsWith("/login");
+      const pathname = request.nextUrl.pathname;
+      const isAuthPage = pathname.startsWith("/login");
+      const isApiRoute = pathname.startsWith("/api/v1/");
+      const isLoginApi = pathname === "/api/v1/auth/login";
+
+      if (isLoginApi) return true;
 
       if (isAuthPage) {
         if (isLoggedIn) return Response.redirect(new URL("/", request.nextUrl));
         return true;
       }
 
-      return isLoggedIn;
+      if (!isLoggedIn) {
+        return isApiRoute
+          ? Response.json({ error: "Unauthorized" }, { status: 401 })
+          : false;
+      }
+
+      const userType = auth.user.userType;
+      const allowed = isApiRoute
+        ? hasApiAccessByPath(userType, pathname)
+        : hasRouteAccessByPath(userType, pathname);
+
+      if (allowed) return true;
+
+      return isApiRoute
+        ? Response.json({ error: "Forbidden" }, { status: 403 })
+        : Response.redirect(new URL("/", request.nextUrl));
     },
   },
   providers: [],

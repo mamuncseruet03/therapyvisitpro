@@ -28,6 +28,50 @@ export type RouteKey =
   | "deletion-requests"
   | "announcements";
 
+const PAGE_ROUTE_MAP: Record<string, RouteKey> = {
+  Agencies: "agencies",
+  AuditLogs: "audit-logs",
+  CompanyInformation: "dashboard",
+  CompanySettings: "settings",
+  CoordinatorTasks: "tasks",
+  DocumentLibrary: "documents",
+  EditVisitNote: "visits",
+  Invoices: "invoices",
+  MyLabor: "my-labor",
+  MyPatients: "patients",
+  MyProfile: "my-profile",
+  MySchedule: "my-schedule",
+  MyTasks: "my-tasks",
+  NewVisitNote: "visits",
+  Orders: "orders",
+  PatientDetail: "patients",
+  PatientTherapyDetail: "patients",
+  Patients: "patients",
+  Payroll: "payroll",
+  Reports: "reports",
+  TaskAssignment: "tasks",
+  Therapists: "therapists",
+  UserManagement: "users",
+  VisitCalendar: "calendar",
+  VisitNoteDetail: "visits",
+  VisitNotes: "visits",
+  WeeklyClose: "weekly-close",
+};
+
+const API_ROUTE_MAP: Record<string, RouteKey> = {
+  agencies: "agencies",
+  "audit-logs": "audit-logs",
+  "deletion-requests": "deletion-requests",
+  documents: "documents",
+  invoices: "invoices",
+  patients: "patients",
+  payroll: "payroll",
+  reports: "reports",
+  therapists: "therapists",
+  users: "users",
+  "visit-notes": "visits",
+};
+
 const ROUTE_PERMISSIONS: Record<RouteKey, UserType[]> = {
   dashboard: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR", "HR", "GUEST", "CLIENT"],
   patients: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
@@ -72,10 +116,18 @@ export function hasRouteAccessByPath(userType: UserType, pathname: string): bool
   const segment = pathname.split("/").filter(Boolean)[0];
   if (!segment) return true;
 
-  const routeKey = segment as RouteKey;
-  if (!(routeKey in ROUTE_PERMISSIONS)) return true;
+  const routeKey = PAGE_ROUTE_MAP[segment] ?? (segment as RouteKey);
+  if (!(routeKey in ROUTE_PERMISSIONS)) return false;
 
   return hasRouteAccess(userType, routeKey);
+}
+
+export function hasApiAccessByPath(userType: UserType, pathname: string): boolean {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== "api" || segments[1] !== "v1") return true;
+
+  const routeKey = API_ROUTE_MAP[segments[2]];
+  return routeKey ? hasRouteAccess(userType, routeKey) : true;
 }
 
 export type ResourceAction = "view" | "create" | "update" | "delete" | "export" | "sign";

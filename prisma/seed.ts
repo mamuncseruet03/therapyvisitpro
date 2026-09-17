@@ -283,12 +283,13 @@ async function main() {
   // Seed company info
   await prisma.companyInfo.create({
     data: {
-      companyName: "TherapyVisit Pro",
-      tagline: "Home Health Therapy Management",
-      phone: "1-800-555-THER",
-      email: "support@therapyvisit.com",
-      address: { street: "500 Corporate Dr", city: "Tampa", state: "FL", zip: "33601" },
-      businessHours: { weekdays: "8:00 AM - 6:00 PM", weekends: "Closed" },
+      companyName: "Apex Rehab Group LLC.",
+      tagline: "Contract Therapy Services",
+      description: "Contract Therapy Services providing comprehensive therapy documentation solutions for healthcare professionals. We specialize in Physical Therapy, Occupational Therapy, and Speech Therapy services.",
+      phone: "6177846396",
+      email: "adorsatwar@apexrehabgroup.com",
+      address: { line1: "245 Saw Mill River Rd suite 106,", line2: "Hawthorne,", line3: "NY 10532, USA" },
+      businessHours: { weekday: "8:00 AM - 6:00 PM", weekend: "Closed" },
       menuPermissions: {},
     },
   });
@@ -305,32 +306,23 @@ async function main() {
   // Seed document library
   await prisma.documentLibrary.create({
     data: {
-      name: "HIPAA Privacy Policy",
-      description: "Required privacy policy document",
-      category: "Compliance",
-      isActive: true,
-    },
-  });
-
-  await prisma.documentLibrary.create({
-    data: {
-      name: "Patient Intake Form",
-      description: "Standard intake form template",
-      category: "Form",
-      isActive: true,
+      name: "home exs progam",
+      category: "exercise",
+      fileUrl: "https://media.base44.com/files/public/69877638e7958d53eb6b5b30/f9d53a3df_home-exercise-program2.pdf",
+      fileName: "home-exercise-program (2).pdf",
+      isActive: false,
     },
   });
 
   // Seed tasks
   await prisma.task.create({
     data: {
-      title: "Review patient documentation",
-      description: "Review all pending patient documentation for compliance",
-      assignedTo: "admin@therapyvisit.com",
-      assignedToName: "Admin User",
-      priority: "HIGH",
-      status: "PENDING",
-      dueDate: new Date("2025-08-15"),
+      title: "Check for missed visits",
+      assignedTo: "rehab@aaahealthgroup.com",
+      assignedToName: "rehab",
+      priority: "MEDIUM",
+      status: "COMPLETED",
+      completedDate: new Date("2026-04-22"),
     },
   });
 

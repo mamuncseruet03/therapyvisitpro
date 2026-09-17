@@ -1,13 +1,13 @@
 "use server";
 
 import { prisma } from "@/lib/db";
-import { requireAuth, requireRole } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
 
 export async function getDeletionRequests() {
-  await requireAuth();
+  const user = await requireRole("SUPERUSER", "ADMIN");
 
   const requests = await prisma.deletionRequest.findMany({
     orderBy: { createdAt: "desc" },
@@ -20,6 +20,9 @@ export async function getDeletionRequests() {
     patient_snapshot: r.patientSnapshot,
     requested_by: r.requestedBy,
     requested_by_name: r.requestedByName,
+    is_current_user_request:
+      r.requestedBy === user.email ||
+      r.patientSnapshot?.localRequesterEmail === user.email,
     reason: r.reason,
     approved_by: r.approvedBy,
     approved_by_name: r.approvedByName,
@@ -35,7 +38,10 @@ export async function approveDeletionRequest(id) {
 
   const request = await prisma.deletionRequest.findUnique({ where: { id } });
   if (!request) throw new Error("Request not found");
-  if (request.requestedBy === user.email) {
+  if (
+    request.requestedBy === user.email ||
+    request.patientSnapshot?.localRequesterEmail === user.email
+  ) {
     throw new Error("Cannot approve your own deletion request");
   }
 

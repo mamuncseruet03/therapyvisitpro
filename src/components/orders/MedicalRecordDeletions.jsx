@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useCurrentUser } from "@/components/layout/UserContext";
 import { getDeletionRequests, approveDeletionRequest, rejectDeletionRequest } from "@/lib/api-client/deletion-requests";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +19,6 @@ const statusColor = {
 };
 
 export default function MedicalRecordDeletions() {
-  const currentUser = useCurrentUser();
   const [approveDialog, setApproveDialog] = useState(null);
   const [rejectDialog, setRejectDialog] = useState(null);
   const [password, setPassword] = useState("");
@@ -113,7 +111,7 @@ export default function MedicalRecordDeletions() {
                         <p className="text-xs text-slate-500">Reason: <span className="text-slate-700">{req.reason}</span></p>
                         <p className="text-xs text-slate-500">Visit notes to delete: <span className="font-semibold text-red-600">{req.visit_notes_count ?? "?"}</span></p>
                       </div>
-                      {req.requested_by !== currentUser?.email ? (
+                      {!req.is_current_user_request ? (
                         <div className="flex gap-2 shrink-0">
                           <Button
                             size="sm"

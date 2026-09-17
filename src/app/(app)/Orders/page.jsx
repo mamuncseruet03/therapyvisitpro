@@ -58,9 +58,7 @@ function VisitTable({ visits, emptyMessage }) {
 }
 
 export default function Orders() {
-  const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const defaultTab = urlParams.get("tab") || "deletions";
-
+  const [activeTab, setActiveTab] = useState("deletions");
   const [visits, setVisits] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -81,6 +79,13 @@ export default function Orders() {
     }
   }, []);
 
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (["deletions", "eval", "recert", "discharge"].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, []);
+
   useEffect(() => { loadData(); }, [loadData]);
 
   const evalOrders = visits.filter((v) => v.visit_type === "evaluation" && (v.status === "completed" || v.status === "signed"));
@@ -96,7 +101,7 @@ export default function Orders() {
         <p className="text-slate-500 text-sm mt-1">Manage evaluation, recertification, and discharge orders</p>
       </div>
 
-      <Tabs defaultValue={defaultTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="h-auto">
           <TabsTrigger value="deletions" className="gap-2 py-2.5 px-5">
             <Trash2 className="w-4 h-4" />

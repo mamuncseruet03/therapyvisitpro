@@ -36,6 +36,7 @@ const BILLING_TAB_MAP = {
 
 function InvoicesContent() {
   const searchParams = useSearchParams();
+  const agencyView = searchParams.get("view") === "agency";
   const reportParam = searchParams.get("report");
   const defaultTab = reportParam && BILLING_TAB_MAP[reportParam] ? BILLING_TAB_MAP[reportParam] : "list";
 
@@ -141,6 +142,47 @@ function InvoicesContent() {
           setViewingInvoice((prev) => ({ ...prev, status }));
         }}
       />
+    );
+  }
+
+  if (agencyView) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Invoices</h1>
+          <p className="text-slate-500 text-sm mt-1">{invoices.length} invoices for your agency</p>
+        </div>
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Visits</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-16" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400">Loading...</TableCell></TableRow>
+              ) : invoices.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400">No invoices available</TableCell></TableRow>
+              ) : invoices.map((inv) => (
+                <TableRow key={inv.id}>
+                  <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
+                  <TableCell className="text-sm text-slate-500">{inv.date_from} – {inv.date_to}</TableCell>
+                  <TableCell>{inv.line_items?.length || 0}</TableCell>
+                  <TableCell className="font-semibold">${(inv.total_amount || 0).toFixed(2)}</TableCell>
+                  <TableCell><Badge className={`text-xs ${statusColors[inv.status] || ""}`}>{inv.status}</Badge></TableCell>
+                  <TableCell><Button variant="ghost" size="icon" onClick={() => setViewingInvoice(inv)}><Eye className="w-4 h-4" /></Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
     );
   }
 

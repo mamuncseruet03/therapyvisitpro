@@ -34,7 +34,6 @@ export async function getPayrollData() {
         status: true,
         rates: true,
       },
-      orderBy: { fullName: "asc" },
     }),
     prisma.patient.findMany({
       select: {

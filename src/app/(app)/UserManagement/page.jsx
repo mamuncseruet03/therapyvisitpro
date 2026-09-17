@@ -19,6 +19,15 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
+const DISCIPLINE_LABELS = {
+  PT: "Physical Therapy",
+  OT: "Occupational Therapy",
+  ST: "Speech Therapy",
+  PHYSICAL_THERAPY: "Physical Therapy",
+  OCCUPATIONAL_THERAPY: "Occupational Therapy",
+  SPEECH_THERAPY: "Speech Therapy",
+};
+
 export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -176,7 +185,7 @@ export default function UserManagement() {
                     <UserProfileBadge userType={u.user_type || "therapist"} />
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-sm text-slate-500">{u.credentials || "—"}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-slate-500">{u.discipline || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell text-sm text-slate-500">{DISCIPLINE_LABELS[u.discipline] || u.discipline || "—"}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     {u.therapist_id ? (
                       <span className="inline-flex items-center gap-1 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5">

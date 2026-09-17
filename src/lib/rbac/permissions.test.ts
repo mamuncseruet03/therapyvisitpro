@@ -3,6 +3,7 @@ import {
   hasRouteAccess,
   getAccessibleRoutes,
   hasRouteAccessByPath,
+  hasApiAccessByPath,
   hasResourceAccess,
 } from "./permissions";
 import type { UserType } from "@/lib/types/enums";
@@ -120,8 +121,22 @@ describe("hasRouteAccessByPath", () => {
     });
   });
 
-  it("allows unknown routes by default", () => {
-    expect(hasRouteAccessByPath("GUEST", "/unknown-route")).toBe(true);
+  it("denies unknown application routes by default", () => {
+    expect(hasRouteAccessByPath("GUEST", "/unknown-route")).toBe(false);
+  });
+
+  it("maps application route names to permissions", () => {
+    expect(hasRouteAccessByPath("THERAPIST", "/VisitNotes")).toBe(true);
+    expect(hasRouteAccessByPath("THERAPIST", "/Invoices")).toBe(false);
+    expect(hasRouteAccessByPath("HR", "/Therapists")).toBe(true);
+    expect(hasRouteAccessByPath("HR", "/Patients")).toBe(false);
+  });
+
+  it("protects sensitive API route groups", () => {
+    expect(hasApiAccessByPath("ADMIN", "/api/v1/invoices")).toBe(true);
+    expect(hasApiAccessByPath("THERAPIST", "/api/v1/invoices")).toBe(false);
+    expect(hasApiAccessByPath("COORDINATOR", "/api/v1/deletion-requests")).toBe(false);
+    expect(hasApiAccessByPath("THERAPIST", "/api/v1/visit-notes")).toBe(true);
   });
 });
 

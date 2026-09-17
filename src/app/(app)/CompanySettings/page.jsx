@@ -32,25 +32,26 @@ const ALL_NAV_PAGES = [
   { key: "CompanySettings", label: "Company Settings" },
   { key: "CoordinatorTasks", label: "My Tasks (Coordinator)" },
   { key: "MyLabor", label: "My Labor (Coordinator)" },
+  { key: "AuditLogs", label: "Audit Logs" },
 ];
 
 const ROLES = [
   { key: "admin", label: "Admin", icon: ShieldCheck, color: "text-teal-600" },
   { key: "therapist", label: "Therapist", icon: User, color: "text-blue-600" },
   { key: "coordinator", label: "Coordinator", icon: Users, color: "text-violet-600" },
+  { key: "hr", label: "HR", icon: ShieldAlert, color: "text-rose-600" },
   { key: "guest", label: "Guest", icon: User, color: "text-slate-500" },
   { key: "client", label: "Agency/Client", icon: User, color: "text-amber-600" },
 ];
 
 // Default permissions if none configured
 const DEFAULT_PERMISSIONS = {
-  admin: ALL_NAV_PAGES.filter(p =>
-    !["MySchedule", "MyPatients", "MyTasks", "MyProfile"].includes(p.key)
-  ).map(p => p.key),
+  admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
   therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
-  coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CoordinatorTasks", "MyLabor"],
-  guest: ["Dashboard", "CompanyInformation"],
-  client: ["Dashboard", "CompanyInformation"],
+  coordinator: ["Dashboard", "Patients", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
+  hr: ["Dashboard", "Therapists", "CompanyInformation"],
+  guest: [],
+  client: [],
 };
 
 export default function CompanySettings() {

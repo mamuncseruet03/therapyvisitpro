@@ -24,7 +24,7 @@ const VISIT_TYPE_DISPLAY = {
 };
 
 export async function getInvoices() {
-  await requireAuth();
+  await requireRole("SUPERUSER", "ADMIN");
 
   const invoices = await prisma.invoice.findMany({
     orderBy: { createdAt: "desc" },

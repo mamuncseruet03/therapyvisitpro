@@ -33,6 +33,16 @@ import AnnouncementBar from "./AnnouncementBar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { getUsersForSelect } from "@/lib/api-client/tasks";
+import { getCompanyInfo } from "@/lib/api-client/company-info";
+
+const BASE44_MENU_PERMISSIONS = {
+  admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
+  therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
+  coordinator: ["Dashboard", "Patients", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
+  hr: ["Dashboard", "Therapists", "CompanyInformation"],
+  guest: [],
+  client: [],
+};
 
 const NAV = [
   { name: "Dashboard", icon: LayoutDashboard, page: "Dashboard", href: "/" },
@@ -48,7 +58,7 @@ const NAV = [
   { name: "Visit Notes", icon: FileText, page: "VisitNotes", href: "/VisitNotes" },
   { name: "Visit Calendar", icon: CalendarDays, page: "VisitCalendar", href: "/VisitCalendar" },
   { name: "Agencies", icon: Activity, page: "Agencies", href: "/Agencies" },
-  { name: "Invoices", icon: Receipt, page: "AgencyInvoices", href: "/Invoices" },
+  { name: "Invoices", icon: Receipt, page: "AgencyInvoices", href: "/Invoices?view=agency" },
   { name: "Billing", icon: Receipt, page: "Invoices", href: "/Invoices", submenu: [
     "Invoice Manager",
     "Edit Special Pricing",
@@ -93,12 +103,23 @@ export default function Layout({ children, user }) {
   const [impersonatedUser, setImpersonatedUser] = useState(null);
   const [impersonationUsers, setImpersonationUsers] = useState([]);
   const [impersonationSearch, setImpersonationSearch] = useState("");
+  const [menuPermissions, setMenuPermissions] = useState(BASE44_MENU_PERMISSIONS);
 
   useEffect(() => {
     if (user?.user_type === "superuser") {
       getUsersForSelect().then(setImpersonationUsers).catch(() => setImpersonationUsers([]));
     }
   }, [user?.user_type]);
+
+  useEffect(() => {
+    getCompanyInfo()
+      .then((info) => {
+        if (info?.menu_permissions && Object.keys(info.menu_permissions).length > 0) {
+          setMenuPermissions(info.menu_permissions);
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
 
   const filteredImpersonationUsers = useMemo(() => {
     const query = impersonationSearch.trim().toLowerCase();
@@ -110,17 +131,15 @@ export default function Layout({ children, user }) {
   const effectiveUser = user
     ? { ...user, ...(impersonatedUser || {}) }
     : { user_type: "therapist", full_name: "User" };
-  const isAdmin = ["admin", "superuser", "hr"].includes(effectiveUser?.user_type);
   const isSuperuser = effectiveUser?.user_type === "superuser";
   const userRoleKey = effectiveUser?.user_type || "therapist";
-  const isTherapist = !isAdmin;
   const isHR = userRoleKey === "hr";
 
   const visibleNav = NAV.filter((item) => {
     if (isSuperuser) return !SUPERUSER_HIDDEN.includes(item.page);
-    if (isTherapist) return ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation", "WeeklyClose"].includes(item.page);
-    if (isHR) return !["MySchedule", "MyPatients", "MyTasks", "MyProfile", "WeeklyClose", "VisitCalendar", "Orders"].includes(item.page);
-    return !["MySchedule", "MyPatients", "MyTasks", "MyProfile", "WeeklyClose"].includes(item.page);
+    const permissionRole = userRoleKey;
+    const permissionPage = item.page === "AgencyInvoices" ? "Invoices" : item.page;
+    return (menuPermissions[permissionRole] || []).includes(permissionPage);
   });
 
   const SidebarContent = ({ mobile }) => (

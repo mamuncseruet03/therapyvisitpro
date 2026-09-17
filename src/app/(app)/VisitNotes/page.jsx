@@ -72,15 +72,6 @@ export default function VisitNotes() {
     return matchSearch && matchType && matchStatus;
   });
 
-  const disciplineCounts = [
-    { label: "Physical", value: "Physical Therapy", color: "bg-blue-500" },
-    { label: "Occupational", value: "Occupational Therapy", color: "bg-amber-500" },
-    { label: "Speech", value: "Speech Therapy", color: "bg-violet-500" },
-  ].map((discipline) => ({
-    ...discipline,
-    count: visits.filter((visit) => visit.therapy_type === discipline.value).length,
-  }));
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -95,27 +86,6 @@ export default function VisitNotes() {
             </Button>
           </Link>
         )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {disciplineCounts.map((discipline) => (
-          <button
-            key={discipline.value}
-            type="button"
-            onClick={() => setFilterType(filterType === discipline.value ? "all" : discipline.value)}
-            className={`rounded-xl border bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-sm ${
-              filterType === discipline.value ? "border-teal-500 ring-1 ring-teal-500" : "border-slate-200"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                <span className={`h-2.5 w-2.5 rounded-full ${discipline.color}`} />
-                {discipline.label}
-              </span>
-              <span className="text-2xl font-bold text-slate-900">{discipline.count}</span>
-            </div>
-          </button>
-        ))}
       </div>
 
       <div className="flex flex-wrap gap-3">
