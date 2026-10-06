@@ -7,6 +7,8 @@ import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
 import { createUserSchema, updateUserSchema } from "@/lib/validations/user";
+import { randomBytes } from "crypto";
+import nodemailer from "nodemailer";
 
 const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
 
@@ -15,6 +17,57 @@ const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
 // the password and doesn't collect a name), so validate against a subset instead
 // of the full schema.
 const inviteUserSchema = createUserSchema.pick({ email: true, userType: true });
+
+function getInviteMailConfig() {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
+    throw new Error(
+      "Invitation email is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM.",
+    );
+  }
+
+  return {
+    transporter: nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT || 587),
+      secure: Number(SMTP_PORT || 587) === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    }),
+    from: SMTP_FROM,
+  };
+}
+
+async function sendInvitationEmail({ email, userType, temporaryPassword }) {
+  const { transporter, from } = getInviteMailConfig();
+  const appUrl = (
+    process.env.APP_URL ||
+    process.env.AUTH_URL ||
+    process.env.NEXTAUTH_URL ||
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: "You're invited to TherapyDocs",
+    text: [
+      "You have been invited to TherapyDocs.",
+      `Account type: ${userType.toLowerCase()}`,
+      `Sign in: ${appUrl}/login`,
+      `Temporary password: ${temporaryPassword}`,
+      "Please sign in and keep this password secure.",
+    ].join("\n\n"),
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">
+        <h2 style="color:#0f766e">You're invited to TherapyDocs</h2>
+        <p>An administrator created a <strong>${userType.toLowerCase()}</strong> account for you.</p>
+        <p><a href="${appUrl}/login" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Sign in to TherapyDocs</a></p>
+        <p><strong>Email:</strong> ${email}<br/><strong>Temporary password:</strong> <code>${temporaryPassword}</code></p>
+        <p style="color:#64748b;font-size:13px">Please keep this password secure.</p>
+      </div>
+    `,
+  });
+}
 
 // Deliberately excludes `discipline`: the schema's Discipline enum expects
 // short codes (PT/OT/ST), but the UserManagement edit form's discipline <Select>
@@ -107,16 +160,32 @@ export async function inviteUser({ email, userType }) {
     client: "USER",
   };
 
-  const passwordHash = await hashPassword("changeme123");
+  // Validate SMTP before creating the account so a configuration error cannot
+  // leave behind a user who never received login credentials.
+  getInviteMailConfig();
 
-  await prisma.user.create({
+  const temporaryPassword = randomBytes(12).toString("base64url");
+  const passwordHash = await hashPassword(temporaryPassword);
+
+  const invitedUser = await prisma.user.create({
     data: {
       email: v.email,
       passwordHash,
-      role: roleMap[userType] ?? "USER",
+      role: roleMap[v.userType.toLowerCase()] ?? "USER",
       userType: v.userType,
     },
   });
+
+  try {
+    await sendInvitationEmail({
+      email: v.email,
+      userType: v.userType,
+      temporaryPassword,
+    });
+  } catch (error) {
+    await prisma.user.delete({ where: { id: invitedUser.id } });
+    throw error;
+  }
 
   const h = await headers();
   await logAudit({
@@ -127,7 +196,7 @@ export async function inviteUser({ email, userType }) {
     ipAddress: getClientIp(h),
   });
 
-  return { success: true };
+  return { success: true, email_sent: true };
 }
 
 export async function updateUser({ id, data }) {

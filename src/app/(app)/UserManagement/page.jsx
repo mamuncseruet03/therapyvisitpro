@@ -32,6 +32,7 @@ export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [inviteForm, setInviteForm] = useState({ email: "", user_type: "therapist" });
@@ -76,6 +77,7 @@ export default function UserManagement() {
   };
 
   const handleInvite = async () => {
+    setInviting(true);
     try {
       const result = await inviteUser({ email: inviteForm.email, userType: inviteForm.user_type });
       if (result.error) { toast.error(result.error); return; }
@@ -86,6 +88,8 @@ export default function UserManagement() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to send invite: " + (err?.message || "Unknown error"));
+    } finally {
+      setInviting(false);
     }
   };
 
@@ -243,8 +247,8 @@ export default function UserManagement() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-            <Button onClick={handleInvite} disabled={!inviteForm.email} className="bg-teal-600 hover:bg-teal-700">
-              Send Invite
+            <Button onClick={handleInvite} disabled={!inviteForm.email || inviting} className="bg-teal-600 hover:bg-teal-700">
+              {inviting ? "Sending…" : "Send Invite"}
             </Button>
           </DialogFooter>
         </DialogContent>

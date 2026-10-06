@@ -24,6 +24,9 @@ export async function POST(request: NextRequest) {
     }
     return apiSuccess(result, 201);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Invitation email is not configured")) {
+      return apiError(err.message, 503);
+    }
     return handleApiError(err);
   }
 }
