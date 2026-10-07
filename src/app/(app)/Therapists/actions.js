@@ -81,7 +81,7 @@ export async function getTherapistById(id) {
 }
 
 export async function createTherapist(data) {
-  const user = await requireRole("SUPERUSER", "ADMIN", "HR");
+  const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR", "HR");
 
   const parsed = createTherapistSchema.safeParse(toValidationInput(data));
   if (!parsed.success) {

@@ -38,7 +38,7 @@ import { getCompanyInfo } from "@/lib/api-client/company-info";
 const BASE44_MENU_PERMISSIONS = {
   admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
   therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
-  coordinator: ["Dashboard", "Patients", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
+  coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
   hr: ["Dashboard", "Therapists", "CompanyInformation"],
   guest: [],
   client: [],
@@ -115,7 +115,16 @@ export default function Layout({ children, user }) {
     getCompanyInfo()
       .then((info) => {
         if (info?.menu_permissions && Object.keys(info.menu_permissions).length > 0) {
-          setMenuPermissions(info.menu_permissions);
+          // Company Settings may contain an older saved permission snapshot.
+          // Merge it with required role defaults so newly-required access
+          // (notably coordinator -> Therapists) cannot disappear at runtime.
+          const mergedPermissions = Object.fromEntries(
+            Object.entries(BASE44_MENU_PERMISSIONS).map(([role, defaults]) => [
+              role,
+              [...new Set([...(info.menu_permissions[role] || []), ...defaults])],
+            ]),
+          );
+          setMenuPermissions(mergedPermissions);
         }
       })
       .catch(() => {});
@@ -132,7 +141,7 @@ export default function Layout({ children, user }) {
     ? { ...user, ...(impersonatedUser || {}) }
     : { user_type: "therapist", full_name: "User" };
   const isSuperuser = effectiveUser?.user_type === "superuser";
-  const userRoleKey = effectiveUser?.user_type || "therapist";
+  const userRoleKey = (effectiveUser?.user_type || "therapist").toLowerCase();
   const isHR = userRoleKey === "hr";
 
   const visibleNav = NAV.filter((item) => {

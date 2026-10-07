@@ -75,7 +75,7 @@ const API_ROUTE_MAP: Record<string, RouteKey> = {
 const ROUTE_PERMISSIONS: Record<RouteKey, UserType[]> = {
   dashboard: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR", "HR", "GUEST", "CLIENT"],
   patients: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
-  therapists: ["SUPERUSER", "ADMIN", "HR"],
+  therapists: ["SUPERUSER", "ADMIN", "COORDINATOR", "HR"],
   agencies: ["SUPERUSER", "ADMIN"],
   visits: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   invoices: ["SUPERUSER", "ADMIN"],
@@ -140,8 +140,8 @@ const RESOURCE_PERMISSIONS: Record<string, Partial<Record<ResourceAction, UserTy
     delete: ["SUPERUSER", "ADMIN"],
   },
   therapist: {
-    view: ["SUPERUSER", "ADMIN", "HR", "THERAPIST"],
-    create: ["SUPERUSER", "ADMIN"],
+    view: ["SUPERUSER", "ADMIN", "COORDINATOR", "HR", "THERAPIST"],
+    create: ["SUPERUSER", "ADMIN", "COORDINATOR", "HR"],
     update: ["SUPERUSER", "ADMIN", "HR"],
     delete: ["SUPERUSER", "ADMIN"],
   },

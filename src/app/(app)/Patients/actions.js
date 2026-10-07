@@ -8,6 +8,11 @@ import { getClientIp } from "@/lib/audit/logger";
 import { createPatientSchema, updatePatientSchema } from "@/lib/validations/patient";
 
 const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
+const THERAPY_TYPE_MAP = {
+  "Physical Therapy": "PHYSICAL_THERAPY",
+  "Occupational Therapy": "OCCUPATIONAL_THERAPY",
+  "Speech Therapy": "SPEECH_THERAPY",
+};
 
 // Builds the object createPatientSchema/updatePatientSchema expect (camelCase,
 // upper-case enums) from the snake_case wire payload. Deliberately excludes
@@ -22,7 +27,10 @@ function toValidationInput(data) {
     firstName: data.first_name,
     lastName: data.last_name,
     dateOfBirth: data.date_of_birth || undefined,
-    sex: upper(data.sex),
+    // Radix Select leaves an unselected optional value as an empty string.
+    // Zod optional enums accept undefined, not "", so normalize it before
+    // validation. This is the common referral path when Sex is not supplied.
+    sex: data.sex ? upper(data.sex) : undefined,
     ssnEncrypted: data.ssn,
     medicareNumber: data.medicare_number,
     phone: data.phone,
@@ -41,7 +49,9 @@ function toValidationInput(data) {
       data.authorized_visits !== undefined && data.authorized_visits !== null && data.authorized_visits !== ""
         ? Number(data.authorized_visits)
         : undefined,
-    therapyTypes: Array.isArray(data.therapy_types) ? data.therapy_types.map(upper) : undefined,
+    therapyTypes: Array.isArray(data.therapy_types)
+      ? data.therapy_types.map((type) => THERAPY_TYPE_MAP[type] || upper(type)?.replaceAll(" ", "_"))
+      : undefined,
     notes: data.notes,
     status: upper(data.status),
     responsibleParty:
@@ -156,7 +166,19 @@ export async function getAgenciesForSelect() {
 export async function createPatient(data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
-  const parsed = createPatientSchema.safeParse(toValidationInput(data));
+  // Referral forms select an agency by its display name. Resolve it here so
+  // the resulting patient is linked to the agency and appears correctly in
+  // the patient list/details, while still accepting an explicit agency_id.
+  let agencyId = data.agency_id || null;
+  if (!agencyId && data.agency) {
+    const agency = await prisma.agency.findFirst({
+      where: { name: { equals: data.agency, mode: "insensitive" } },
+      select: { id: true },
+    });
+    agencyId = agency?.id || null;
+  }
+
+  const parsed = createPatientSchema.safeParse(toValidationInput({ ...data, agency_id: agencyId || undefined }));
   if (!parsed.success) {
     return { error: parsed.error.issues[0].message };
   }
@@ -175,7 +197,7 @@ export async function createPatient(data) {
       city: v.city ?? null,
       state: v.state ?? null,
       zip: v.zip ?? null,
-      agencyId: v.agencyId ?? null,
+      agencyId: agencyId,
       insurance: v.insurance ?? null,
       coordinatorEmail: v.coordinatorEmail ?? null,
       certPeriodStart: v.certPeriodStart ?? null,
@@ -237,7 +259,16 @@ export async function createPatient(data) {
 export async function updatePatient(id, data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
-  const parsed = updatePatientSchema.safeParse(toValidationInput(data));
+  let agencyId = data.agency_id;
+  if (data.agency) {
+    const agency = await prisma.agency.findFirst({
+      where: { name: { equals: data.agency, mode: "insensitive" } },
+      select: { id: true },
+    });
+    agencyId = agency?.id || agencyId;
+  }
+
+  const parsed = updatePatientSchema.safeParse(toValidationInput({ ...data, agency_id: agencyId }));
   if (!parsed.success) {
     return { error: parsed.error.issues[0].message };
   }

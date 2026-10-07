@@ -48,7 +48,7 @@ const ROLES = [
 const DEFAULT_PERMISSIONS = {
   admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
   therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
-  coordinator: ["Dashboard", "Patients", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
+  coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
   hr: ["Dashboard", "Therapists", "CompanyInformation"],
   guest: [],
   client: [],

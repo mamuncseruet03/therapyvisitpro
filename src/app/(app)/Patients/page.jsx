@@ -157,7 +157,7 @@ export default function Patients() {
       (p) =>
         p.first_name?.toLowerCase() === data.first_name?.toLowerCase() &&
         p.last_name?.toLowerCase() === data.last_name?.toLowerCase() &&
-        (data.date_of_birth ? p.date_of_birth === data.date_of_birth : true)
+        (data.date_of_birth ? String(p.date_of_birth || "").slice(0, 10) === data.date_of_birth : true)
     );
 
   const logReferral = async (data, sourceType, patientAction, patientId) => {
@@ -192,33 +192,57 @@ export default function Patients() {
 
   // Handle manual referral form save — always creates or updates patient
   const handleReferralSave = async (data) => {
-    const existing = findExisting(data);
-    const patientData = buildPatientData(data);
+    try {
+      const existing = findExisting(data);
+      const patientData = buildPatientData(data);
+      let patientId;
+      let patientAction;
 
-    if (existing) {
-      await handleUpdate({
-        id: existing.id,
-        data: {
+      if (existing) {
+        const result = await updatePatient(existing.id, {
           ...existing,
           ...patientData,
           notes: existing.notes
             ? `${existing.notes}\n\n--- New Referral ---\nReferral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`
             : `Referral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`,
-        },
+        });
+        if (!result?.success) throw new Error(result?.error || "Patient update failed");
+        patientId = existing.id;
+        patientAction = "updated";
+      } else {
+        const result = await createPatient({
+          first_name: data.first_name,
+          last_name: data.last_name,
+          date_of_birth: data.date_of_birth,
+          ...patientData,
+          notes: `Referral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`,
+          status: "active",
+        });
+        if (!result?.success || !result.id) throw new Error(result?.error || "Patient creation failed");
+        patientId = result.id;
+        patientAction = "created";
+      }
+
+      const referral = await createReferral({
+        ...data,
+        source_type: "manual",
+        patient_id: patientId,
+        patient_action: patientAction,
       });
-      logReferral(data, "manual", "updated", existing.id);
-      toast.success(`${existing.first_name} ${existing.last_name} already exists — profile updated with new referral.`);
-    } else {
-      const created = await handleCreate({
-        first_name: data.first_name,
-        last_name: data.last_name,
-        date_of_birth: data.date_of_birth,
-        ...patientData,
-        notes: `Referral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`,
-        status: "active",
-      });
-      logReferral(data, "manual", "created", created?.id);
-      toast.success(`Patient ${data.first_name} ${data.last_name} created and added to the patient list.`);
+      if (!referral?.success) throw new Error(referral?.error || "Referral creation failed");
+
+      await loadPatients();
+      setActiveTab("list");
+      toast.success(
+        patientAction === "created"
+          ? `Patient ${data.first_name} ${data.last_name} created and added to the patient list.`
+          : `${existing.first_name} ${existing.last_name} already exists — profile updated with new referral.`,
+      );
+      return { success: true };
+    } catch (err) {
+      console.error("Failed to save referral:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to save referral");
+      return { success: false };
     }
   };
 

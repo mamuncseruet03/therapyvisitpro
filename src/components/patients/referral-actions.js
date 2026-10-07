@@ -169,6 +169,13 @@ export async function deleteAssignment(id) {
 export async function createReferral(data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
+  if (!data.agency || !data.cert_period_start || !data.cert_period_end) {
+    return { error: "Agency and certification period start/end dates are required" };
+  }
+  if (data.cert_period_end < data.cert_period_start) {
+    return { error: "Certification period end date cannot be before the start date" };
+  }
+
   const referral = await prisma.referral.create({
     data: {
       firstName: data.first_name,

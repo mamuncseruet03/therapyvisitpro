@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Save, Calendar, Search, X } from "lucide-react";
 import { getAgenciesForSelect, getPatients } from "@/lib/api-client/patients";
 import { getTherapists } from "@/lib/api-client/therapists";
+import { toast } from "sonner";
 
 export default function ReferralIntakeForm({ onSave }) {
   const [form, setForm] = useState({
@@ -85,9 +86,35 @@ export default function ReferralIntakeForm({ onSave }) {
   };
 
   const handleSave = async () => {
+    if (!form.agency || !form.cert_period_start || !form.cert_period_end) {
+      toast.error("Agency and certification period start/end dates are required.");
+      return;
+    }
+    if (form.cert_period_end < form.cert_period_start) {
+      toast.error("Certification period end date cannot be before the start date.");
+      return;
+    }
     setSaving(true);
-    await onSave(form);
-    setSaving(false);
+    try {
+      const result = await onSave(form);
+      if (result?.success) {
+        setForm((current) => ({
+          ...current,
+          first_name: "",
+          last_name: "",
+          date_of_birth: "",
+          phone: "",
+          primary_diagnosis: "",
+          therapy_types: [],
+          agency: "",
+          cert_period_start: "",
+          cert_period_end: "",
+          notes: "",
+        }));
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selectPatient = (patient) => {
@@ -444,7 +471,7 @@ export default function ReferralIntakeForm({ onSave }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Agency</Label>
+              <Label>Agency *</Label>
               <Select value={form.agency} onValueChange={(v) => set("agency", v)}>
                 <SelectTrigger><SelectValue placeholder="Select agency" /></SelectTrigger>
                 <SelectContent>
@@ -509,12 +536,12 @@ export default function ReferralIntakeForm({ onSave }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Certification Period Start</Label>
-              <Input type="date" value={form.cert_period_start} onChange={(e) => set("cert_period_start", e.target.value)} />
+              <Label>Certification Period Start *</Label>
+              <Input type="date" required value={form.cert_period_start} onChange={(e) => set("cert_period_start", e.target.value)} />
             </div>
             <div>
-              <Label>Certification Period End</Label>
-              <Input type="date" value={form.cert_period_end} onChange={(e) => set("cert_period_end", e.target.value)} />
+              <Label>Certification Period End *</Label>
+              <Input type="date" required min={form.cert_period_start || undefined} value={form.cert_period_end} onChange={(e) => set("cert_period_end", e.target.value)} />
             </div>
           </div>
 
@@ -537,7 +564,7 @@ export default function ReferralIntakeForm({ onSave }) {
           <div className="flex justify-end">
             <Button
               onClick={handleSave}
-              disabled={saving || !form.first_name || !form.last_name || form.therapy_types.length === 0}
+              disabled={saving || !form.first_name || !form.last_name || !form.agency || !form.cert_period_start || !form.cert_period_end || form.therapy_types.length === 0}
               className="bg-teal-600 hover:bg-teal-700"
             >
               <Save className="w-4 h-4 mr-2" />

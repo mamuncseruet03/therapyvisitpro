@@ -57,9 +57,9 @@ describe("Route permissions", () => {
     expect(hasRouteAccess("COORDINATOR", "tasks")).toBe(true);
     expect(hasRouteAccess("COORDINATOR", "my-labor")).toBe(true);
     expect(hasRouteAccess("COORDINATOR", "referrals")).toBe(true);
+    expect(hasRouteAccess("COORDINATOR", "therapists")).toBe(true);
 
     expect(hasRouteAccess("COORDINATOR", "invoices")).toBe(false);
-    expect(hasRouteAccess("COORDINATOR", "therapists")).toBe(false);
   });
 
   it("restricts HR to therapists and HR routes", () => {
@@ -160,6 +160,9 @@ describe("Resource permissions", () => {
     expect(hasResourceAccess("COORDINATOR", "patient", "view")).toBe(true);
     expect(hasResourceAccess("COORDINATOR", "patient", "create")).toBe(true);
     expect(hasResourceAccess("COORDINATOR", "patient", "delete")).toBe(false);
+    expect(hasResourceAccess("COORDINATOR", "therapist", "view")).toBe(true);
+    expect(hasResourceAccess("COORDINATOR", "therapist", "create")).toBe(true);
+    expect(hasResourceAccess("COORDINATOR", "therapist", "update")).toBe(false);
   });
 
   it("guest has no resource access", () => {

@@ -11,6 +11,7 @@ import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import TherapistForm from "@/components/therapists/TherapistForm";
+import { useCurrentUser } from "@/components/layout/UserContext";
 
 const discColor = {
   "Physical Therapy": "bg-blue-50 text-blue-700 border-blue-200",
@@ -19,6 +20,10 @@ const discColor = {
 };
 
 export default function Therapists() {
+  const currentUser = useCurrentUser();
+  const effectiveRole = (currentUser?.user_type || currentUser?.role || "").toLowerCase();
+  const canEdit = ["superuser", "admin", "hr"].includes(effectiveRole);
+  const canDelete = ["superuser", "admin"].includes(effectiveRole);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
@@ -160,12 +165,16 @@ export default function Therapists() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(t)}>
-                      <Pencil className="w-3.5 h-3.5 text-slate-400" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(t.id)}>
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </Button>
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(t)}>
+                        <Pencil className="w-3.5 h-3.5 text-slate-400" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(t.id)}>
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
