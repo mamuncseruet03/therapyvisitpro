@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Search, FileText, Upload, Pencil } from "lucide-react";
 
 const actionColors = {
+  pending: "bg-slate-100 text-slate-700",
   created: "bg-emerald-50 text-emerald-700",
   updated: "bg-blue-50 text-blue-700",
   skipped: "bg-amber-50 text-amber-700",
@@ -113,15 +114,13 @@ export default function ReferralListTab({ onEdit }) {
                   )}
                 </TableCell>
                 <TableCell>
-                  {r.patient_action ? (
-                    <Badge className={`text-xs capitalize ${actionColors[r.patient_action] || ""}`}>
-                      {r.patient_action}
-                    </Badge>
-                  ) : "---"}
+                  <Badge className={`text-xs capitalize ${actionColors[r.patient_action || "pending"]}`}>
+                    {r.patient_action || "pending"}
+                  </Badge>
                 </TableCell>
                 <TableCell>
-                  {r.patient_id && onEdit && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(r.patient_id)}>
+                  {onEdit && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit referral for ${r.first_name} ${r.last_name}`} onClick={() => onEdit(r.id)}>
                       <Pencil className="w-3.5 h-3.5 text-slate-400" />
                     </Button>
                   )}

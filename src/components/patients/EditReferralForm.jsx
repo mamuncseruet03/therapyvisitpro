@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,33 +9,71 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Edit, X } from "lucide-react";
-import { getAgenciesForSelect, getPatients } from "@/lib/api-client/patients";
+import { getAgenciesForSelect } from "@/lib/api-client/patients";
+import { getReferrals } from "@/lib/api-client/referrals";
 
-export default function EditReferralForm({ onUpdate, preselectedPatientId }) {
+const therapyTypeNames = {
+  pt: "Physical Therapy",
+  physical: "Physical Therapy",
+  physical_therapy: "Physical Therapy",
+  "physical therapy": "Physical Therapy",
+  ot: "Occupational Therapy",
+  occupational: "Occupational Therapy",
+  occupational_therapy: "Occupational Therapy",
+  "occupational therapy": "Occupational Therapy",
+  st: "Speech Therapy",
+  slp: "Speech Therapy",
+  speech: "Speech Therapy",
+  speech_therapy: "Speech Therapy",
+  "speech therapy": "Speech Therapy",
+};
+
+function normalizeTherapyTypes(types) {
+  if (!Array.isArray(types)) return [];
+  return [...new Set(types.map((type) => therapyTypeNames[String(type).trim().toLowerCase()] || type))];
+}
+
+export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedReferral, setSelectedReferral] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [agencies, setAgencies] = useState([]);
-  const [patients, setPatients] = useState([]);
+  const [referrals, setReferrals] = useState([]);
 
   useEffect(() => {
-    Promise.all([getAgenciesForSelect(), getPatients()])
-      .then(([a, p]) => { setAgencies(a); setPatients(p); })
+    Promise.all([getAgenciesForSelect(), getReferrals()])
+      .then(([a, r]) => { setAgencies(a); setReferrals(r); })
       .catch(console.error);
   }, []);
 
-  useEffect(() => {
-    if (preselectedPatientId && patients.length > 0 && !selectedPatient) {
-      const p = patients.find(pt => pt.id === preselectedPatientId);
-      if (p) selectPatient(p);
-    }
-  }, [preselectedPatientId, patients]);
+  const selectReferral = useCallback((referral) => {
+    setSelectedReferral(referral);
+    setForm({
+      ...referral,
+      date_of_birth: referral.date_of_birth ? String(referral.date_of_birth).slice(0, 10) : "",
+      referral_date: referral.referral_date ? String(referral.referral_date).slice(0, 10) : "",
+      diagnosis: referral.primary_diagnosis || "",
+      therapy_types: normalizeTherapyTypes(referral.therapy_types),
+      cert_period_start: referral.cert_period_start ? String(referral.cert_period_start).slice(0, 10) : "",
+      cert_period_end: referral.cert_period_end ? String(referral.cert_period_end).slice(0, 10) : "",
+    });
+    setSearchQuery("");
+  }, []);
 
-  const filteredPatients = searchQuery
-    ? patients.filter((p) =>
-        `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchQuery.toLowerCase())
+  useEffect(() => {
+    if (preselectedReferralId && referrals.length > 0 && !selectedReferral) {
+      const referral = referrals.find(item => item.id === preselectedReferralId);
+      // Synchronize the asynchronously loaded referral with the selected ID.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (referral) selectReferral(referral);
+    }
+  }, [preselectedReferralId, referrals, selectedReferral, selectReferral]);
+
+  const filteredReferrals = searchQuery
+    ? referrals.filter((r) =>
+        `${r.first_name} ${r.last_name}`.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
 
@@ -50,49 +88,24 @@ export default function EditReferralForm({ onUpdate, preselectedPatientId }) {
     }));
   };
 
-  const selectPatient = (patient) => {
-    setSelectedPatient(patient);
-    setForm({
-      first_name: patient.first_name || "",
-      last_name: patient.last_name || "",
-      date_of_birth: patient.date_of_birth || "",
-      phone: patient.phone || "",
-      diagnosis: patient.diagnosis || "",
-      therapy_types: patient.therapy_types || [],
-      insurance: patient.insurance || "",
-      agency: patient.agency || "",
-      city: patient.city || "",
-      cert_period_start: patient.cert_period_start || "",
-      cert_period_end: patient.cert_period_end || "",
-      authorization_number: patient.authorization_number || "",
-      authorized_visits: patient.authorized_visits || "",
-      pt_eval_visits: patient.pt_eval_visits || "",
-      pt_treatment_visits: patient.pt_treatment_visits || "",
-      ot_eval_visits: patient.ot_eval_visits || "",
-      ot_treatment_visits: patient.ot_treatment_visits || "",
-      st_eval_visits: patient.st_eval_visits || "",
-      st_treatment_visits: patient.st_treatment_visits || "",
-      notes: patient.notes || "",
-    });
-    setSearchQuery("");
-  };
-
   const handleSave = async () => {
     setSaving(true);
-    await onUpdate(selectedPatient.id, form);
+    const result = await onUpdate(selectedReferral.id, form);
     setSaving(false);
-    setSelectedPatient(null);
-    setForm(null);
+    if (result?.success) {
+      setSelectedReferral(null);
+      setForm(null);
+    }
   };
 
   const handleCancel = () => {
-    setSelectedPatient(null);
+    setSelectedReferral(null);
     setForm(null);
   };
 
   return (
     <div className="max-w-4xl space-y-6">
-      {!selectedPatient ? (
+      {!selectedReferral ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -102,7 +115,7 @@ export default function EditReferralForm({ onUpdate, preselectedPatientId }) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Search Patient</Label>
+              <Label>Search Referral</Label>
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -110,23 +123,23 @@ export default function EditReferralForm({ onUpdate, preselectedPatientId }) {
                 className="mt-2"
               />
             </div>
-            {searchQuery && filteredPatients.length > 0 && (
+            {searchQuery && filteredReferrals.length > 0 && (
               <div className="max-h-96 overflow-y-auto space-y-2">
-                {filteredPatients.map((patient) => (
+                {filteredReferrals.map((referral) => (
                   <button
-                    key={patient.id}
-                    onClick={() => selectPatient(patient)}
+                    key={referral.id}
+                    onClick={() => selectReferral(referral)}
                     className="w-full text-left px-4 py-3 rounded-lg border hover:bg-slate-50 transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium text-slate-900">
-                          {patient.first_name} {patient.last_name}
+                          {referral.first_name} {referral.last_name}
                         </div>
                         <div className="text-sm text-slate-500 mt-1">
-                          {patient.date_of_birth && `DOB: ${patient.date_of_birth}`}
-                          {patient.agency && ` • ${patient.agency}`}
-                          {patient.authorization_number && ` • Auth: ${patient.authorization_number}`}
+                          {referral.date_of_birth && `DOB: ${referral.date_of_birth}`}
+                          {referral.agency && ` • ${referral.agency}`}
+                          {referral.authorization_number && ` • Auth: ${referral.authorization_number}`}
                         </div>
                       </div>
                       <Edit className="w-4 h-4 text-teal-600" />
@@ -135,8 +148,8 @@ export default function EditReferralForm({ onUpdate, preselectedPatientId }) {
                 ))}
               </div>
             )}
-            {searchQuery && filteredPatients.length === 0 && (
-              <div className="text-sm text-slate-500 text-center py-8">No patients found</div>
+            {searchQuery && filteredReferrals.length === 0 && (
+              <div className="text-sm text-slate-500 text-center py-8">No referrals found</div>
             )}
           </CardContent>
         </Card>

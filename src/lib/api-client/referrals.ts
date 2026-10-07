@@ -14,6 +14,15 @@ export async function createReferral(data: unknown) {
   return handleResponse(res);
 }
 
+export async function updateReferral(id: string, data: unknown) {
+  const res = await fetch(apiUrl(`/api/v1/referrals/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return handleResponse(res);
+}
+
 export async function getAssignments() {
   const res = await fetch(apiUrl("/api/v1/assignments"));
   return handleResponse(res);

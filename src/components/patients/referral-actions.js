@@ -6,6 +6,27 @@ import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
 
+const THERAPY_TYPE_DISPLAY = {
+  pt: "Physical Therapy",
+  physical: "Physical Therapy",
+  physical_therapy: "Physical Therapy",
+  "physical therapy": "Physical Therapy",
+  ot: "Occupational Therapy",
+  occupational: "Occupational Therapy",
+  occupational_therapy: "Occupational Therapy",
+  "occupational therapy": "Occupational Therapy",
+  st: "Speech Therapy",
+  slp: "Speech Therapy",
+  speech: "Speech Therapy",
+  speech_therapy: "Speech Therapy",
+  "speech therapy": "Speech Therapy",
+};
+
+function normalizeTherapyTypes(types) {
+  if (!Array.isArray(types)) return [];
+  return [...new Set(types.map(type => THERAPY_TYPE_DISPLAY[String(type).trim().toLowerCase()] || type))];
+}
+
 export async function getReferrals() {
   await requireAuth();
 
@@ -25,7 +46,7 @@ export async function getReferrals() {
       referral_source: cd.referralSource || null,
       primary_diagnosis: cd.primaryDiagnosis || null,
       diagnoses: cd.diagnoses || [],
-      therapy_types: cd.therapyTypes || [],
+      therapy_types: normalizeTherapyTypes(cd.therapyTypes),
       insurance: cd.insurance || null,
       agency: cd.agency || null,
       rate_type: cd.rateType || "standard",
@@ -169,6 +190,12 @@ export async function deleteAssignment(id) {
 export async function createReferral(data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
+  if (!data.first_name?.trim() || !data.last_name?.trim()) {
+    return { error: "First name and last name are required" };
+  }
+  if (!Array.isArray(data.therapy_types) || data.therapy_types.length === 0) {
+    return { error: "Select at least one therapy type" };
+  }
   if (!data.agency || !data.cert_period_start || !data.cert_period_end) {
     return { error: "Agency and certification period start/end dates are required" };
   }
@@ -218,4 +245,67 @@ export async function createReferral(data) {
   });
 
   return { success: true, id: referral.id };
+}
+
+export async function updateReferral(id, data) {
+  const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
+
+  if (!data.first_name?.trim() || !data.last_name?.trim()) {
+    return { error: "First name and last name are required" };
+  }
+  if (!Array.isArray(data.therapy_types) || data.therapy_types.length === 0) {
+    return { error: "Select at least one therapy type" };
+  }
+  if (!data.agency || !data.cert_period_start || !data.cert_period_end) {
+    return { error: "Agency and certification period start/end dates are required" };
+  }
+  if (data.cert_period_end < data.cert_period_start) {
+    return { error: "Certification period end date cannot be before the start date" };
+  }
+
+  const current = await prisma.referral.findUnique({ where: { id } });
+  if (!current) return { error: "Referral not found" };
+  const currentClinical = current.clinicalData || {};
+
+  await prisma.referral.update({
+    where: { id },
+    data: {
+      firstName: data.first_name,
+      lastName: data.last_name,
+      dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
+      phone: data.phone || null,
+      referralDate: data.referral_date ? new Date(data.referral_date) : null,
+      clinicalData: {
+        ...currentClinical,
+        referralSource: data.referral_source || null,
+        primaryDiagnosis: data.primary_diagnosis || data.diagnosis || null,
+        diagnoses: data.diagnoses || currentClinical.diagnoses || [],
+        therapyTypes: data.therapy_types || [],
+        insurance: data.insurance || null,
+        agency: data.agency || null,
+        rateType: data.rate_type || currentClinical.rateType || "standard",
+        specialRates: data.special_rates || currentClinical.specialRates || {},
+        physicianName: data.physician_name || null,
+        physicianPhone: data.physician_phone || null,
+        authorizationNumber: data.authorization_number || null,
+        authorizedVisits: data.authorized_visits || null,
+        certPeriodStart: data.cert_period_start,
+        certPeriodEnd: data.cert_period_end,
+        notes: data.notes || null,
+      },
+    },
+  });
+
+  const h = await headers();
+  await logAudit({
+    user,
+    action: "UPDATE",
+    resourceType: "Referral",
+    resourceId: id,
+    resourceLabel: `${data.first_name} ${data.last_name}`,
+    details: "Updated referral intake record",
+    ipAddress: getClientIp(h),
+  });
+
+  return { success: true };
 }

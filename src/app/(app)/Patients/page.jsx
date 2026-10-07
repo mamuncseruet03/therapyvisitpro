@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { getPatients, createPatient, updatePatient } from "@/lib/api-client/patients";
 import { getCalendarVisits } from "@/lib/api-client/calendar";
-import { createReferral, getAssignments } from "@/lib/api-client/referrals";
+import { createReferral, updateReferral, getAssignments } from "@/lib/api-client/referrals";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -190,21 +190,28 @@ export default function Patients() {
     }
   };
 
-  // Handle manual referral form save — always creates or updates patient
+  // Match Base44: every manual referral is linked to a patient. Selecting an
+  // existing patient updates it; otherwise a new patient is created.
   const handleReferralSave = async (data) => {
     try {
-      const existing = findExisting(data);
+      const explicitlySelected = data.existing_patient_id
+        ? allPatients.find((patient) => patient.id === data.existing_patient_id)
+        : null;
+      const existing = explicitlySelected || findExisting(data);
       const patientData = buildPatientData(data);
       let patientId;
       let patientAction;
 
       if (existing) {
         const result = await updatePatient(existing.id, {
-          ...existing,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          date_of_birth: data.date_of_birth || undefined,
           ...patientData,
           notes: existing.notes
             ? `${existing.notes}\n\n--- New Referral ---\nReferral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`
             : `Referral Source: ${data.referral_source || "N/A"}\nReferral Date: ${data.referral_date}\nPhysician: ${data.physician_name || "N/A"}\n${data.notes || ""}`,
+          status: "active",
         });
         if (!result?.success) throw new Error(result?.error || "Patient update failed");
         patientId = existing.id;
@@ -232,11 +239,11 @@ export default function Patients() {
       if (!referral?.success) throw new Error(referral?.error || "Referral creation failed");
 
       await loadPatients();
-      setActiveTab("list");
+      setActiveTab("referral-list");
       toast.success(
         patientAction === "created"
-          ? `Patient ${data.first_name} ${data.last_name} created and added to the patient list.`
-          : `${existing.first_name} ${existing.last_name} already exists — profile updated with new referral.`,
+          ? `Patient ${data.first_name} ${data.last_name} created and referral saved.`
+          : `${existing.first_name} ${existing.last_name} updated; no duplicate patient created.`,
       );
       return { success: true };
     } catch (err) {
@@ -278,19 +285,17 @@ export default function Patients() {
   };
 
   const handleReferralUpdate = async (id, data) => {
-    await handleUpdate({
-      id,
-      data: {
-        ...data,
-        authorized_visits: data.authorized_visits ? parseInt(data.authorized_visits) : null,
-        pt_eval_visits: data.pt_eval_visits ? parseInt(data.pt_eval_visits) : null,
-        pt_treatment_visits: data.pt_treatment_visits ? parseInt(data.pt_treatment_visits) : null,
-        ot_eval_visits: data.ot_eval_visits ? parseInt(data.ot_eval_visits) : null,
-        ot_treatment_visits: data.ot_treatment_visits ? parseInt(data.ot_treatment_visits) : null,
-        st_eval_visits: data.st_eval_visits ? parseInt(data.st_eval_visits) : null,
-        st_treatment_visits: data.st_treatment_visits ? parseInt(data.st_treatment_visits) : null,
-      },
-    });
+    try {
+      const result = await updateReferral(id, data);
+      if (!result?.success) throw new Error(result?.error || "Referral update failed");
+      toast.success("Referral updated");
+      setEditReferralPatientId(null);
+      setActiveTab("referral-list");
+      return { success: true };
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update referral");
+      return { success: false };
+    }
   };
 
   return (
@@ -437,11 +442,11 @@ export default function Patients() {
         </TabsContent>
 
         <TabsContent value="referral-list">
-          <ReferralListTab onEdit={(patientId) => { setEditReferralPatientId(patientId); setActiveTab("edit-referral"); }} />
+          <ReferralListTab onEdit={(referralId) => { setEditReferralPatientId(referralId); setActiveTab("edit-referral"); }} />
         </TabsContent>
 
         <TabsContent value="edit-referral">
-          <EditReferralForm onUpdate={handleReferralUpdate} preselectedPatientId={editReferralPatientId} />
+          <EditReferralForm onUpdate={handleReferralUpdate} preselectedReferralId={editReferralPatientId} />
         </TabsContent>
 
         <TabsContent value="add">

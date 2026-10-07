@@ -13,6 +13,31 @@ import { getAgenciesForSelect, getPatients } from "@/lib/api-client/patients";
 import { getTherapists } from "@/lib/api-client/therapists";
 import { toast } from "sonner";
 
+const therapyTypeNames = {
+  pt: "Physical Therapy",
+  physical: "Physical Therapy",
+  physical_therapy: "Physical Therapy",
+  "physical therapy": "Physical Therapy",
+  ot: "Occupational Therapy",
+  occupational: "Occupational Therapy",
+  occupational_therapy: "Occupational Therapy",
+  "occupational therapy": "Occupational Therapy",
+  st: "Speech Therapy",
+  slp: "Speech Therapy",
+  speech: "Speech Therapy",
+  speech_therapy: "Speech Therapy",
+  "speech therapy": "Speech Therapy",
+};
+
+function normalizeTherapyTypes(types) {
+  if (!Array.isArray(types)) return [];
+  return [...new Set(types.map((type) => therapyTypeNames[String(type).trim().toLowerCase()] || type))];
+}
+
+function dateInputValue(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
 export default function ReferralIntakeForm({ onSave }) {
   const [form, setForm] = useState({
     first_name: "",
@@ -53,6 +78,7 @@ export default function ReferralIntakeForm({ onSave }) {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [selectedPatientId, setSelectedPatientId] = useState(null);
 
   const [patients, setPatients] = useState([]);
   const [therapists, setTherapists] = useState([]);
@@ -86,6 +112,14 @@ export default function ReferralIntakeForm({ onSave }) {
   };
 
   const handleSave = async () => {
+    if (!form.first_name.trim() || !form.last_name.trim()) {
+      toast.error("First name and last name are required.");
+      return;
+    }
+    if (form.therapy_types.length === 0) {
+      toast.error("Select at least one therapy type.");
+      return;
+    }
     if (!form.agency || !form.cert_period_start || !form.cert_period_end) {
       toast.error("Agency and certification period start/end dates are required.");
       return;
@@ -96,8 +130,9 @@ export default function ReferralIntakeForm({ onSave }) {
     }
     setSaving(true);
     try {
-      const result = await onSave(form);
+      const result = await onSave({ ...form, existing_patient_id: selectedPatientId });
       if (result?.success) {
+        setSelectedPatientId(null);
         setForm((current) => ({
           ...current,
           first_name: "",
@@ -118,27 +153,23 @@ export default function ReferralIntakeForm({ onSave }) {
   };
 
   const selectPatient = (patient) => {
-    setForm({
+    setSelectedPatientId(patient.id);
+    setForm((current) => ({
+      ...current,
       first_name: patient.first_name || "",
       last_name: patient.last_name || "",
-      date_of_birth: patient.date_of_birth || "",
+      date_of_birth: dateInputValue(patient.date_of_birth),
       phone: patient.phone || "",
-      referral_source: form.referral_source,
-      referral_date: form.referral_date,
       primary_diagnosis: patient.diagnoses?.[0]?.diagnosis || "",
-      therapy_types: patient.therapy_types || [],
+      therapy_types: normalizeTherapyTypes(patient.therapy_types),
       insurance: patient.insurance || "",
       agency: patient.agency || "",
-      rate_type: form.rate_type,
-      special_rates: form.special_rates,
-      physician_name: form.physician_name,
-      physician_phone: form.physician_phone,
-      cert_period_start: patient.cert_period_start || "",
-      cert_period_end: patient.cert_period_end || "",
+      cert_period_start: dateInputValue(patient.cert_period_start),
+      cert_period_end: dateInputValue(patient.cert_period_end),
       authorization_number: patient.authorization_number || "",
       authorized_visits: patient.authorized_visits || "",
       notes: patient.notes || "",
-    });
+    }));
     setSearchQuery("");
     setShowSearch(false);
   };
@@ -211,14 +242,21 @@ export default function ReferralIntakeForm({ onSave }) {
             </div>
           )}
 
+          {selectedPatientId && (
+            <div className="flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-800">
+              <span>Existing patient selected — saving will update this patient and will not create a duplicate.</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedPatientId(null)}>Clear</Button>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>First Name *</Label>
-              <Input value={form.first_name} onChange={(e) => set("first_name", e.target.value)} />
+              <Label className="text-red-700">First Name <span aria-hidden="true">*</span></Label>
+              <Input required aria-required="true" className={!form.first_name.trim() ? "border-red-300 bg-red-50/40 focus-visible:ring-red-300" : ""} value={form.first_name} onChange={(e) => set("first_name", e.target.value)} />
             </div>
             <div>
-              <Label>Last Name *</Label>
-              <Input value={form.last_name} onChange={(e) => set("last_name", e.target.value)} />
+              <Label className="text-red-700">Last Name <span aria-hidden="true">*</span></Label>
+              <Input required aria-required="true" className={!form.last_name.trim() ? "border-red-300 bg-red-50/40 focus-visible:ring-red-300" : ""} value={form.last_name} onChange={(e) => set("last_name", e.target.value)} />
             </div>
           </div>
 
@@ -270,8 +308,8 @@ export default function ReferralIntakeForm({ onSave }) {
             </div>
           </div>
 
-          <div>
-            <Label>Therapy Types *</Label>
+          <div className={`rounded-lg border p-3 ${form.therapy_types.length === 0 ? "border-red-300 bg-red-50/40" : "border-transparent"}`}>
+            <Label className="text-red-700">Therapy Types <span aria-hidden="true">*</span></Label>
             <div className="flex gap-6 mt-2">
               {["Physical Therapy", "Occupational Therapy", "Speech Therapy"].map((type) => (
                 <div key={type} className="flex items-center gap-2">
@@ -471,9 +509,9 @@ export default function ReferralIntakeForm({ onSave }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Agency *</Label>
+              <Label className="text-red-700">Agency <span aria-hidden="true">*</span></Label>
               <Select value={form.agency} onValueChange={(v) => set("agency", v)}>
-                <SelectTrigger><SelectValue placeholder="Select agency" /></SelectTrigger>
+                <SelectTrigger aria-required="true" className={!form.agency ? "border-red-300 bg-red-50/40 focus:ring-red-300" : ""}><SelectValue placeholder="Select agency" /></SelectTrigger>
                 <SelectContent>
                   {agencies.map((a) => (
                     <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
@@ -536,12 +574,12 @@ export default function ReferralIntakeForm({ onSave }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Certification Period Start *</Label>
-              <Input type="date" required value={form.cert_period_start} onChange={(e) => set("cert_period_start", e.target.value)} />
+              <Label className="text-red-700">Certification Period Start <span aria-hidden="true">*</span></Label>
+              <Input type="date" required aria-required="true" className={!form.cert_period_start ? "border-red-300 bg-red-50/40 focus-visible:ring-red-300" : ""} value={form.cert_period_start} onChange={(e) => set("cert_period_start", e.target.value)} />
             </div>
             <div>
-              <Label>Certification Period End *</Label>
-              <Input type="date" required min={form.cert_period_start || undefined} value={form.cert_period_end} onChange={(e) => set("cert_period_end", e.target.value)} />
+              <Label className="text-red-700">Certification Period End <span aria-hidden="true">*</span></Label>
+              <Input type="date" required aria-required="true" min={form.cert_period_start || undefined} className={!form.cert_period_end ? "border-red-300 bg-red-50/40 focus-visible:ring-red-300" : ""} value={form.cert_period_end} onChange={(e) => set("cert_period_end", e.target.value)} />
             </div>
           </div>
 
@@ -562,9 +600,10 @@ export default function ReferralIntakeForm({ onSave }) {
           </div>
 
           <div className="flex justify-end">
+            <p className="mr-auto self-center text-xs font-medium text-red-600"><span aria-hidden="true">*</span> Required fields</p>
             <Button
               onClick={handleSave}
-              disabled={saving || !form.first_name || !form.last_name || !form.agency || !form.cert_period_start || !form.cert_period_end || form.therapy_types.length === 0}
+              disabled={saving}
               className="bg-teal-600 hover:bg-teal-700"
             >
               <Save className="w-4 h-4 mr-2" />
