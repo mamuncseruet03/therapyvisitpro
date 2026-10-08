@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import Link from "next/link";
 import { FileText, Download } from "lucide-react";
-import { toast } from "sonner";
 import { useState } from "react";
 
 const therapyColor = {
@@ -27,7 +26,14 @@ export default function RecentVisits({ visits = [] }) {
   const handleDownloadPDF = async (e, visit) => {
     e.preventDefault();
     e.stopPropagation();
-    // mock no-op
+    setDownloadingId(visit.id);
+    const anchor = document.createElement("a");
+    anchor.href = `/api/v1/documents/pdf?type=visit&id=${encodeURIComponent(visit.id)}`;
+    anchor.download = `visit-note-${visit.id}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setDownloadingId(null);
   };
 
   if (visits.length === 0) {

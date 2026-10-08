@@ -17,8 +17,9 @@ const therapyColors = {
   "Occupational Therapy": "bg-purple-100 text-purple-700",
   "Speech Therapy": "bg-amber-100 text-amber-700",
 };
+const PTA_COTA = ["PTA", "COTA"];
 
-export default function AwaitingAssignment({ assignments, therapists = [], onRefresh }) {
+export default function AwaitingAssignment({ assignments, therapists = [], agencies = [], onRefresh }) {
   const [assignDialog, setAssignDialog] = useState(null);
   const [selectedTherapistId, setSelectedTherapistId] = useState("");
   const [assigning, setAssigning] = useState(false);
@@ -34,29 +35,33 @@ export default function AwaitingAssignment({ assignments, therapists = [], onRef
     if (!therapist) return;
     setAssigning(true);
     try {
-      await updateAssignment(assignDialog.id, {
+      const result = await updateAssignment(assignDialog.id, {
         therapist_id: selectedTherapistId,
         therapist_name: therapist.full_name,
       });
-      onRefresh?.();
+      if (!result?.success) throw new Error(result?.error || "Assignment could not be saved");
+      await onRefresh?.();
       toast.success(`Assigned ${therapist.full_name} to ${assignDialog.patient_name}`);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to assign therapist");
-    } finally {
-      setAssigning(false);
       setAssignDialog(null);
       setSelectedTherapistId("");
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to assign therapist");
+    } finally {
+      setAssigning(false);
     }
   };
 
   const handleDelete = async (id) => {
     setDeleting(true);
     try {
-      await deleteAssignmentAction(id);
-      onRefresh?.();
+      const result = await deleteAssignmentAction(id);
+      if (!result?.success) throw new Error(result?.error || "Assignment could not be deleted");
+      await onRefresh?.();
+      toast.success("Assignment removed");
     } catch (err) {
       console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to delete assignment");
     } finally {
       setDeleting(false);
     }
@@ -69,11 +74,14 @@ export default function AwaitingAssignment({ assignments, therapists = [], onRef
 
   // Filter therapists by matching discipline
   const eligibleTherapists = assignDialog
-    ? therapists.filter(
-        (t) =>
-          t.status !== "inactive" &&
-          t.discipline === assignDialog.therapy_type
-      )
+    ? therapists.filter((t) => {
+        if (t.status === "inactive" || t.discipline !== assignDialog.therapy_type) return false;
+        const isAssistant = PTA_COTA.includes(t.credentials?.trim().toUpperCase());
+        if (assignDialog.visit_type === "evaluation" && isAssistant) return false;
+        const agency = agencies.find((item) => item.name === assignDialog.agency);
+        if (agency?.assistants_allowed === false && isAssistant) return false;
+        return true;
+      })
     : [];
 
   const previouslyAssignedIds = assignDialog
@@ -154,6 +162,7 @@ export default function AwaitingAssignment({ assignments, therapists = [], onRef
                     <Button
                       variant="ghost"
                       size="icon"
+                      disabled={deleting}
                       onClick={() => {
                         if (confirm("Delete this assignment?")) handleDelete(assignment.id);
                       }}
@@ -170,7 +179,7 @@ export default function AwaitingAssignment({ assignments, therapists = [], onRef
       </Card>
 
       {assignDialog && (
-        <Dialog open={!!assignDialog} onOpenChange={() => setAssignDialog(null)}>
+        <Dialog open={!!assignDialog} onOpenChange={() => { setAssignDialog(null); setSelectedTherapistId(""); }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Assign Therapist — {assignDialog.patient_name}</DialogTitle>

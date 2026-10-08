@@ -54,6 +54,11 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
     });
   };
 
+  const getSupervisingTherapists = (therapyType, patientAgency) =>
+    getAvailableTherapists(therapyType, patientAgency).filter(
+      (therapist) => !PTA_COTA.includes(therapist.credentials?.trim().toUpperCase())
+    );
+
   const handleApprove = async (visit) => {
     if (!treatingTherapistId) return;
     setSubmitting(true);
@@ -63,13 +68,14 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
         ? therapists.find(t => t.id === supervisingTherapistId)
         : null;
 
-      await saveVisitNote({
+      const visitResult = await saveVisitNote({
         id: visit.id,
         treatment_approved: true,
         treatment_approved_date: new Date().toISOString(),
       });
+      if (!visitResult?.success) throw new Error(visitResult?.error || "Evaluation approval could not be saved");
 
-      await createAssignment({
+      const assignmentResult = await createAssignment({
         patient_id: visit.patient_id,
         patient_name: visit.patient_name,
         therapist_id: treatingTherapistId,
@@ -88,13 +94,14 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
         supervising_therapist_name: supervisingTherapist?.full_name || null,
         eval_visit_note_id: visit.id,
       });
+      if (!assignmentResult?.success) throw new Error(assignmentResult?.error || "Treatment assignment could not be created");
 
       toast.success(`Treatment orders approved for ${visit.patient_name}`);
-      onRefresh?.();
+      await onRefresh?.();
       setApproveDialog(null);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to approve orders");
+      toast.error(err instanceof Error ? err.message : "Failed to approve orders");
     } finally {
       setSubmitting(false);
     }
@@ -247,13 +254,13 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
                 <p className="text-sm font-semibold text-slate-700 mb-1">
                   Supervising Therapist <span className="text-slate-400 font-normal">(optional)</span>
                 </p>
-                <Select value={supervisingTherapistId} onValueChange={setSupervisingTherapistId}>
+                <Select value={supervisingTherapistId || "none"} onValueChange={(value) => setSupervisingTherapistId(value === "none" ? "" : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select supervising therapist (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={null}>None</SelectItem>
-                    {getAvailableTherapists(approveDialog.therapy_type, approveDialog.agency).map((t) => (
+                    <SelectItem value="none">None</SelectItem>
+                    {getSupervisingTherapists(approveDialog.therapy_type, approveDialog.agency).map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.full_name} {t.credentials && `(${t.credentials})`}
                       </SelectItem>

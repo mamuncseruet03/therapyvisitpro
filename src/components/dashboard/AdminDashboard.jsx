@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Users, FileText, CalendarCheck, Clock, ChevronDown, ChevronUp, AlertCircle, XCircle, UserPlus, CalendarPlus, ClipboardList, Building2, Receipt, DollarSign, BarChart2, UserCog } from "lucide-react";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,11 +28,15 @@ export default function AdminDashboard() {
   const [agencies, setAgencies] = useState([]);
   const [assignments, setAssignments] = useState([]);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     Promise.all([getPatients(), getTherapists(), getCalendarVisits(), getAgencies(), getAssignments()])
       .then(([p, t, v, a, asgn]) => { setPatients(p); setTherapists(t); setVisits(v); setAgencies(a); setAssignments(asgn); })
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
   const activePatients = patients.filter((p) => p.status === "active").length;
   const drafts = visits.filter((v) => v.status === "draft").length;
@@ -250,13 +254,13 @@ export default function AdminDashboard() {
         </Card>
       )}
 
-      <ReferralManagement patients={patients} therapists={therapists} visits={visits} agencies={agencies} />
+      <ReferralManagement patients={patients} therapists={therapists} visits={visits} agencies={agencies} onRefresh={loadDashboard} />
 
-      <AdminAwaitingAcceptance assignments={assignments} />
+      <AdminAwaitingAcceptance assignments={assignments} onRefresh={loadDashboard} />
 
-      <AwaitingAssignment assignments={assignments} therapists={therapists} />
+      <AwaitingAssignment assignments={assignments} therapists={therapists} agencies={agencies} onRefresh={loadDashboard} />
 
-      <OrdersAwaitingApproval visits={visits} therapists={therapists} agencies={agencies} />
+      <OrdersAwaitingApproval visits={visits} therapists={therapists} agencies={agencies} onRefresh={loadDashboard} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

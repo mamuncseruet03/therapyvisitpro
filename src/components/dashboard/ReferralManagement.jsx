@@ -9,10 +9,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ClipboardCheck, UserCheck, Trash2 } from "lucide-react";
 import { AlertCircle } from "lucide-react";
 import { getAssignments, createAssignment } from "@/lib/api-client/referrals";
+import { toast } from "sonner";
 
 const PTA_COTA = ["PTA", "COTA"];
+const THERAPY_TYPE_DISPLAY = {
+  pt: "Physical Therapy",
+  physical: "Physical Therapy",
+  physical_therapy: "Physical Therapy",
+  "physical therapy": "Physical Therapy",
+  ot: "Occupational Therapy",
+  occupational: "Occupational Therapy",
+  occupational_therapy: "Occupational Therapy",
+  "occupational therapy": "Occupational Therapy",
+  st: "Speech Therapy",
+  slp: "Speech Therapy",
+  speech: "Speech Therapy",
+  speech_therapy: "Speech Therapy",
+  "speech therapy": "Speech Therapy",
+};
 
-export default function ReferralManagement({ patients, therapists, visits, agencies = [] }) {
+const normalizeTherapyType = (type) =>
+  THERAPY_TYPE_DISPLAY[String(type || "").trim().toLowerCase()] || type;
+
+export default function ReferralManagement({ patients, therapists, visits, agencies = [], onRefresh }) {
   const [assignDialog, setAssignDialog] = useState(null);
   const [selectedTherapist, setSelectedTherapist] = useState("");
   const [selectedTherapyType, setSelectedTherapyType] = useState("");
@@ -32,7 +51,7 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
     const patientVisits = visits.filter(v => v.patient_id === p.id);
     const patientAssignments = assignments.filter(a => a.patient_id === p.id);
 
-    const therapyTypeVisits = p.therapy_types.map(therapyType => {
+    const therapyTypeVisits = [...new Set(p.therapy_types.map(normalizeTherapyType))].map(therapyType => {
       const visitsForType = patientVisits.filter(v => v.therapy_type === therapyType);
       const hasEval = visitsForType.some(v => v.visit_type === "evaluation");
       const pendingAssignment = patientAssignments.find(a =>
@@ -41,11 +60,11 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
         (a.status === "pending" || a.status === "accepted") &&
         !!a.therapist_id
       );
-      return { therapyType, visitsForType, hasEval, pendingAssignment };
+      return { therapyType, hasEval, pendingAssignment };
     });
 
     // Create entries for pending evaluations and treatment visits
-    return therapyTypeVisits.flatMap(({ therapyType, visitsForType, hasEval, pendingAssignment }) => {
+    return therapyTypeVisits.flatMap(({ therapyType, hasEval, pendingAssignment }) => {
       const entries = [];
 
       // If no evaluation yet and no pending assignment, need evaluation
@@ -81,6 +100,7 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
   const [assigning, setAssigning] = useState(false);
 
   const openAssignDialog = (patient, therapyType, visitType) => {
+    setSelectedTherapist("");
     setAssignDialog({
       patient,
       therapyType,
@@ -93,7 +113,7 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
     if (!selectedTherapist || !selectedTherapyType) return;
     setAssigning(true);
     try {
-      await createAssignment({
+      const result = await createAssignment({
         patient_id: assignDialog.patient.id,
         patient_name: `${assignDialog.patient.first_name} ${assignDialog.patient.last_name}`,
         therapist_id: selectedTherapist,
@@ -101,30 +121,31 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
         visit_type: assignDialog.visitType,
         agency: assignDialog.patient.agency || null,
       });
+      if (!result?.success) throw new Error(result?.error || "Assignment could not be saved");
       const updated = await getAssignments();
       setAssignments(updated);
+      await onRefresh?.();
+      toast.success(`${assignDialog.patient.first_name} ${assignDialog.patient.last_name} assigned successfully`);
     } catch (err) {
       console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to assign therapist");
+      return;
     } finally {
       setAssigning(false);
-      setAssignDialog(null);
-      setSelectedTherapist("");
-      setSelectedTherapyType("");
     }
+    setAssignDialog(null);
+    setSelectedTherapist("");
+    setSelectedTherapyType("");
   };
 
   const getAvailableTherapists = (therapyType, visitType, patientAgency) => {
-    const disciplineMap = {
-      "Physical Therapy": "Physical Therapy",
-      "Occupational Therapy": "Occupational Therapy",
-      "Speech Therapy": "Speech Therapy",
-    };
+    const normalizedTherapyType = normalizeTherapyType(therapyType);
     const agencyRecord = agencies.find(a => a.name === patientAgency);
     // assistants_allowed defaults to true if not set
     const assistantsAllowed = agencyRecord ? agencyRecord.assistants_allowed !== false : true;
 
     return therapists.filter(t => {
-      if (t.status !== "active" || t.discipline !== disciplineMap[therapyType]) return false;
+      if (t.status !== "active" || normalizeTherapyType(t.discipline) !== normalizedTherapyType) return false;
       // Evaluations cannot be assigned to PTA/COTA
       if (visitType === "evaluation" && PTA_COTA.includes(t.credentials?.trim().toUpperCase())) return false;
       // If agency does not allow assistants, block PTA/COTA for treatment too
@@ -214,7 +235,14 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
       </Card>
 
       {assignDialog && (
-        <Dialog open={!!assignDialog} onOpenChange={() => setAssignDialog(null)}>
+        <Dialog
+          open={!!assignDialog}
+          onOpenChange={() => {
+            setAssignDialog(null);
+            setSelectedTherapist("");
+            setSelectedTherapyType("");
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Users, FileText, Clock, CheckCircle, ChevronRight, DollarSign } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -19,18 +19,25 @@ export default function TherapistDashboard({ user }) {
   const [visits, setVisits] = useState([]);
   const [assignments, setAssignments] = useState([]);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     Promise.all([getTherapistsForSchedule(), getPatients(), getCalendarVisits(), getAssignments()])
       .then(([t, p, v, a]) => { setTherapists(t); setAllPatients(p); setVisits(v); setAssignments(a); })
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
   const myTherapistRecord = therapists.find(
-    t => t.email === user?.email || t.full_name === user?.full_name
+    t =>
+      t.id === user?.therapist_id ||
+      t.email === user?.email ||
+      t.full_name?.toLowerCase() === user?.full_name?.toLowerCase()
   );
 
   // All assignment IDs relevant to this therapist
-  const myTherapistId = myTherapistRecord?.id;
+  const myTherapistId = user?.therapist_id || myTherapistRecord?.id;
 
   // Filter visits for this therapist (match by user id, therapist entity id, or either name)
   const myVisits = visits.filter((v) =>
@@ -45,7 +52,16 @@ export default function TherapistDashboard({ user }) {
   // Filter patients assigned to this therapist (through visits or assignments)
   const myPatientIds = new Set([
     ...myVisits.map(v => v.patient_id),
-    ...assignments.filter(a => a.therapist_name === user?.full_name).map(a => a.patient_id)
+    ...assignments
+      .filter(a =>
+        (a.status === "accepted" || a.status === "scheduled") &&
+        (
+          a.therapist_id === myTherapistId ||
+          a.therapist_name === user?.full_name ||
+          a.therapist_name === myTherapistRecord?.full_name
+        )
+      )
+      .map(a => a.patient_id)
   ]);
   const patients = allPatients.filter(p => myPatientIds.has(p.id));
 
@@ -65,7 +81,13 @@ export default function TherapistDashboard({ user }) {
         <StatCard label="Completed" value={myCompleted.length} icon={CheckCircle} accent="bg-green-50 text-green-600" />
       </div>
 
-      <AwaitingAcceptance assignments={assignments} user={user} therapistId={myTherapistId} patients={allPatients} />
+      <AwaitingAcceptance
+        assignments={assignments}
+        user={user}
+        therapistId={myTherapistId}
+        patients={allPatients}
+        onRefresh={loadDashboard}
+      />
 
       {/* My Patients */}
       <Card>

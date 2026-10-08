@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ClipboardList, Check, X, Calendar, AlertCircle } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { updateAssignment } from "@/lib/api-client/referrals";
 import { saveVisitNote } from "@/lib/api-client/visit-notes";
@@ -48,6 +47,10 @@ function formatSentAt(dateStr) {
   });
 }
 
+function formatDateOnly(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
 export default function AwaitingAcceptance({ assignments, user, therapistId, patients, onRefresh }) {
   const [viewDialog, setViewDialog] = useState(null);
   const [declineDialog, setDeclineDialog] = useState(null);
@@ -57,8 +60,6 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
   const [singleDate, setSingleDate] = useState("");
   const [delayReason, setDelayReason] = useState("");
   const [declineRequired, setDeclineRequired] = useState(false);
-  const router = useRouter();
-
   const myPendingAssignments = assignments.filter(
     (a) =>
       ((therapistId && a.therapist_id === therapistId) || a.therapist_name === user?.full_name) &&
@@ -110,7 +111,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
   };
 
   const allScheduledDates = weekSchedule ? weekSchedule.flatMap((w) => w.dates) : [singleDate];
-  const outside48h = scheduleDialog ? isOutside48h(allScheduledDates, scheduleDialog.created_date) : false;
+  const outside48h = scheduleDialog ? isOutside48h(allScheduledDates, scheduleDialog.created_at) : false;
   const totalScheduledVisits = weekSchedule ? weekSchedule.reduce((s, w) => s + w.approved_visits, 0) : 1;
 
   const handleSchedule = async () => {
@@ -245,7 +246,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                 const totalApproved = (assignment.approved_weekly_visits || []).reduce(
                   (s, w) => s + (Number(w.approved_visits) || 0), 0
                 );
-                const sentAt = formatSentAt(assignment.created_date);
+                const sentAt = formatSentAt(assignment.created_at);
                 return (
                   <div key={assignment.id} className="p-3 rounded-lg border hover:bg-slate-50 transition-colors">
                     {sentAt && (
@@ -267,7 +268,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                         <div className="text-xs text-slate-500 space-y-0.5">
                           {assignment.agency && <span>{assignment.agency}</span>}
                           {patient?.cert_period_start && patient?.cert_period_end && (
-                            <p>Cert: {patient.cert_period_start} → {patient.cert_period_end}</p>
+                            <p>Cert: {formatDateOnly(patient.cert_period_start)} → {formatDateOnly(patient.cert_period_end)}</p>
                           )}
                           {totalApproved > 0 && (
                             <p className="text-teal-700 font-medium">
@@ -332,7 +333,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                         <div className="text-xs text-slate-500 space-y-0.5">
                           {assignment.agency && <span>{assignment.agency}</span>}
                           {patient?.cert_period_start && patient?.cert_period_end && (
-                            <p>Cert: {patient.cert_period_start} → {patient.cert_period_end}</p>
+                            <p>Cert: {formatDateOnly(patient.cert_period_start)} → {formatDateOnly(patient.cert_period_end)}</p>
                           )}
                           {totalApproved > 0 && (
                             <p className="text-teal-700 font-medium">
@@ -546,7 +547,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                     {patient.cert_period_start && patient.cert_period_end && (
                       <div>
                         <Label className="text-sm text-slate-500">Certification Period</Label>
-                        <p className="font-medium">{patient.cert_period_start} to {patient.cert_period_end}</p>
+                        <p className="font-medium">{formatDateOnly(patient.cert_period_start)} to {formatDateOnly(patient.cert_period_end)}</p>
                       </div>
                     )}
                     {patient.authorization_number && (

@@ -13,6 +13,11 @@ const THERAPY_TYPE_MAP = {
   "Occupational Therapy": "OCCUPATIONAL_THERAPY",
   "Speech Therapy": "SPEECH_THERAPY",
 };
+const THERAPY_TYPE_DISPLAY = {
+  PHYSICAL_THERAPY: "Physical Therapy",
+  OCCUPATIONAL_THERAPY: "Occupational Therapy",
+  SPEECH_THERAPY: "Speech Therapy",
+};
 
 // Builds the object createPatientSchema/updatePatientSchema expect (camelCase,
 // upper-case enums) from the snake_case wire payload. Deliberately excludes
@@ -94,7 +99,7 @@ function toSnakeCase(p) {
     cert_period_end: p.certPeriodEnd,
     authorization_number: p.authorizationNumber,
     authorized_visits: p.authorizedVisits,
-    therapy_types: (p.therapyTypes || []).map(t => t.toLowerCase()),
+    therapy_types: (p.therapyTypes || []).map(t => THERAPY_TYPE_DISPLAY[t] || t),
     notes: p.notes,
     status: p.status?.toLowerCase(),
     responsible_party_name: rp.name || null,
