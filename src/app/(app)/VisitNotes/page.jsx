@@ -31,7 +31,9 @@ export default function VisitNotes() {
   const [filterStatus, setFilterStatus] = useState("all");
 
   const effectiveUser = useCurrentUser();
-  const isAdmin = ["admin", "superuser"].includes(effectiveUser?.user_type) || ["admin", "superuser"].includes(effectiveUser?.role);
+  const effectiveRole = (effectiveUser?.user_type || effectiveUser?.role || "").toLowerCase();
+  const isAdmin = ["admin", "superuser"].includes(effectiveRole);
+  const isTherapist = effectiveRole === "therapist";
 
   const [allVisits, setAllVisits] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,9 +51,12 @@ export default function VisitNotes() {
 
   useEffect(() => { loadVisits(); }, [loadVisits]);
 
-  const visits = isAdmin
-    ? allVisits
-    : allVisits.filter(v => v.therapist_name === effectiveUser?.full_name || v.therapist_id === effectiveUser?.id);
+  const visits = isTherapist
+    ? allVisits.filter(v =>
+        v.therapist_id === effectiveUser?.therapist_id ||
+        v.therapist_name === effectiveUser?.full_name
+      )
+    : allVisits;
 
   const handleDelete = async (id) => {
     try {
@@ -79,7 +84,7 @@ export default function VisitNotes() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Visit Notes</h1>
           <p className="text-slate-500 text-sm mt-1">{visits.length} total documentation records</p>
         </div>
-        {isAdmin && (
+        {(isAdmin || isTherapist) && (
           <Link href="/NewVisitNote">
             <Button className="bg-teal-600 hover:bg-teal-700 gap-2">
               <Plus className="w-4 h-4" /> New Visit Note
@@ -150,9 +155,11 @@ export default function VisitNotes() {
                     <Link href={`/VisitNoteDetail?id=${v.id}`}>
                       <Button variant="ghost" size="icon" className="h-8 w-8"><Eye className="w-3.5 h-3.5 text-slate-400" /></Button>
                     </Link>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(v.id)}>
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(v.id)} aria-label={`Delete visit note for ${v.patient_name}`}>
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

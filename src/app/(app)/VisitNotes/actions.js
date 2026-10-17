@@ -120,9 +120,12 @@ function jsonSafe(data) {
 }
 
 export async function getVisitNotes() {
-  await requireAuth();
+  const user = await requireAuth();
 
   const notes = await prisma.visitNote.findMany({
+    where: user.userType === "THERAPIST"
+      ? { therapistId: user.therapistId || "__unlinked_therapist__" }
+      : undefined,
     orderBy: { visitDate: "desc" },
     select: {
       id: true,
@@ -157,16 +160,17 @@ export async function getVisitNotes() {
 }
 
 export async function getVisitNoteById(id) {
-  await requireAuth();
+  const user = await requireAuth();
 
   const note = await prisma.visitNote.findUnique({ where: { id } });
   if (!note) return null;
+  if (user.userType === "THERAPIST" && note.therapistId !== user.therapistId) return null;
 
   return toSnakeCase(note);
 }
 
 export async function getVisitFormData() {
-  await requireAuth();
+  const user = await requireAuth();
 
   const [patients, therapists, agencies] = await Promise.all([
     prisma.patient.findMany({
@@ -186,7 +190,12 @@ export async function getVisitFormData() {
       orderBy: { lastName: "asc" },
     }),
     prisma.therapist.findMany({
-      where: { status: "ACTIVE" },
+      where: {
+        status: "ACTIVE",
+        ...(user.userType === "THERAPIST"
+          ? { id: user.therapistId || "__unlinked_therapist__" }
+          : {}),
+      },
       select: {
         id: true,
         fullName: true,
@@ -230,6 +239,25 @@ export async function getVisitFormData() {
 
 export async function saveVisitNote(data) {
   const user = await requireAuth();
+
+  if (!["SUPERUSER", "ADMIN", "THERAPIST"].includes(user.userType)) {
+    throw new Error("Forbidden");
+  }
+
+  if (user.userType === "THERAPIST") {
+    if (!user.therapistId || data.therapist_id !== user.therapistId) {
+      throw new Error("Forbidden: therapists can only document their own visits");
+    }
+    if (data.id) {
+      const ownedNote = await prisma.visitNote.findUnique({
+        where: { id: data.id },
+        select: { therapistId: true },
+      });
+      if (!ownedNote || ownedNote.therapistId !== user.therapistId) {
+        throw new Error("Forbidden: visit note is assigned to another therapist");
+      }
+    }
+  }
 
   // Dashboard order approval intentionally sends only these fields. Treat it
   // as a narrow patch instead of rebuilding the entire required VisitNote

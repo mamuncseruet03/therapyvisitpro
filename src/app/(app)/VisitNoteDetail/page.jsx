@@ -43,7 +43,8 @@ function VisitNoteDetailContent() {
   const [visitData, setVisitData] = useState(null);
   const [editingVisitType, setEditingVisitType] = useState(false);
   const effectiveUser = useCurrentUser();
-  const isAdmin = ["admin", "superuser"].includes(effectiveUser?.role) || ["admin", "superuser"].includes(effectiveUser?.user_type);
+  const effectiveRole = (effectiveUser?.user_type || effectiveUser?.role || "").toLowerCase();
+  const isAdmin = ["admin", "superuser"].includes(effectiveRole);
 
   const router = useRouter();
 
@@ -75,6 +76,11 @@ function VisitNoteDetailContent() {
   useEffect(() => { loadVisit(); }, [loadVisit]);
 
   const visit = visitData || visitRaw;
+  const isOwningTherapist = effectiveRole === "therapist" && (
+    visit?.therapist_id === effectiveUser?.therapist_id ||
+    visit?.therapist_name === effectiveUser?.full_name
+  );
+  const canEdit = isAdmin || isOwningTherapist;
 
   const handleUpdateVisitType = async (newType) => {
     try {
@@ -122,7 +128,7 @@ function VisitNoteDetailContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Link href="/VisitNotes">
           <Button variant="ghost" size="icon" className="h-9 w-9"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
@@ -130,16 +136,18 @@ function VisitNoteDetailContent() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Visit Note</h1>
           <p className="text-slate-500 text-sm mt-0.5">{visit.patient_name}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push(`/EditVisitNote?id=${id}`)}
-          disabled={visit.status === "completed" || visit.status === "signed"}
-          className="gap-2"
-        >
-          <Edit className="w-4 h-4" />
-          Edit
-        </Button>
+        {canEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/EditVisitNote?id=${id}`)}
+            disabled={visit.status === "completed" || visit.status === "signed"}
+            className="gap-2"
+          >
+            <Edit className="w-4 h-4" />
+            Edit
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

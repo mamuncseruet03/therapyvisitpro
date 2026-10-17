@@ -14,7 +14,8 @@ function EditVisitNoteContent() {
   const id = searchParams.get("id");
   const router = useRouter();
   const effectiveUser = useCurrentUser();
-  const isAdmin = ["admin", "superuser"].includes(effectiveUser?.role) || ["admin", "superuser"].includes(effectiveUser?.user_type);
+  const effectiveRole = (effectiveUser?.user_type || effectiveUser?.role || "").toLowerCase();
+  const isAdmin = ["admin", "superuser"].includes(effectiveRole);
 
   const [visit, setVisit] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -81,9 +82,14 @@ function EditVisitNoteContent() {
   }
 
   const isCompleted = visit.status === "completed" || visit.status === "signed";
-  const canEdit = !isCompleted || isAdmin;
+  const isOwningTherapist = effectiveRole === "therapist" && (
+    visit.therapist_id === effectiveUser?.therapist_id ||
+    visit.therapist_name === effectiveUser?.full_name
+  );
+  const hasEditRole = isAdmin || isOwningTherapist;
+  const canEdit = hasEditRole && (!isCompleted || isAdmin);
 
-  if (isCompleted && !isAdmin) {
+  if (!canEdit) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -103,8 +109,12 @@ function EditVisitNoteContent() {
         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
           <Lock className="w-5 h-5 mt-0.5 shrink-0" />
           <div>
-            <p className="font-semibold">Visit Note Locked</p>
-            <p className="text-sm mt-1">This visit note has been completed and is locked. Contact an administrator to unlock it for editing.</p>
+            <p className="font-semibold">{isCompleted ? "Visit Note Locked" : "View Only"}</p>
+            <p className="text-sm mt-1">
+              {isCompleted
+                ? "This visit note has been completed and is locked. Contact an administrator to unlock it for editing."
+                : "Only the assigned therapist or an administrator can edit this visit note."}
+            </p>
           </div>
         </div>
       </div>
