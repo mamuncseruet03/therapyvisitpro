@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ClipboardCheck, UserCheck, Trash2 } from "lucide-react";
 import { AlertCircle } from "lucide-react";
-import { getAssignments, createAssignment } from "@/lib/api-client/referrals";
+import { createAssignment } from "@/lib/api-client/referrals";
 import { toast } from "sonner";
+import { canAssignTherapist } from "@/lib/assignments/eligibility";
 
-const PTA_COTA = ["PTA", "COTA"];
 const THERAPY_TYPE_DISPLAY = {
   pt: "Physical Therapy",
   physical: "Physical Therapy",
@@ -31,16 +31,10 @@ const THERAPY_TYPE_DISPLAY = {
 const normalizeTherapyType = (type) =>
   THERAPY_TYPE_DISPLAY[String(type || "").trim().toLowerCase()] || type;
 
-export default function ReferralManagement({ patients, therapists, visits, agencies = [], onRefresh }) {
+export default function ReferralManagement({ patients, therapists, visits, assignments = [], agencies = [], onRefresh }) {
   const [assignDialog, setAssignDialog] = useState(null);
   const [selectedTherapist, setSelectedTherapist] = useState("");
   const [selectedTherapyType, setSelectedTherapyType] = useState("");
-
-  const [assignments, setAssignments] = useState([]);
-
-  useEffect(() => {
-    getAssignments().then(setAssignments).catch(console.error);
-  }, []);
 
   // Create a flat list of pending referrals (one entry per therapy type)
   const pendingReferrals = patients.flatMap(p => {
@@ -54,34 +48,39 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
     const therapyTypeVisits = [...new Set(p.therapy_types.map(normalizeTherapyType))].map(therapyType => {
       const visitsForType = patientVisits.filter(v => v.therapy_type === therapyType);
       const hasEval = visitsForType.some(v => v.visit_type === "evaluation");
-      const pendingAssignment = patientAssignments.find(a =>
+      // Assignments arrive newest first. Only the latest evaluation assignment
+      // represents the current workflow state; older assigned rows must not hide
+      // a newly recalled/unassigned referral.
+      const latestEvalAssignment = patientAssignments.find(a =>
         a.therapy_type === therapyType &&
-        a.visit_type === "evaluation" &&
-        (a.status === "pending" || a.status === "accepted") &&
-        !!a.therapist_id
+        a.visit_type === "evaluation"
       );
-      return { therapyType, hasEval, pendingAssignment };
+      const pendingAssignment = latestEvalAssignment &&
+        (latestEvalAssignment.status === "pending" || latestEvalAssignment.status === "accepted") &&
+        !!latestEvalAssignment.therapist_id
+        ? latestEvalAssignment
+        : null;
+      const recalledAssignment = latestEvalAssignment?.status === "pending" &&
+        !latestEvalAssignment.therapist_id &&
+        !!latestEvalAssignment.recalled_from
+        ? latestEvalAssignment
+        : null;
+      return { therapyType, hasEval, pendingAssignment, recalledAssignment };
     });
 
     // Create entries for pending evaluations and treatment visits
-    return therapyTypeVisits.flatMap(({ therapyType, hasEval, pendingAssignment }) => {
+    return therapyTypeVisits.flatMap(({ therapyType, hasEval, pendingAssignment, recalledAssignment }) => {
       const entries = [];
 
       // If no evaluation yet and no pending assignment, need evaluation
-      if (!hasEval && !pendingAssignment) {
+      // A recalled latest assignment must return to Pending Referrals even if an
+      // older evaluation visit exists for the same patient/discipline.
+      if ((!hasEval && !pendingAssignment) || recalledAssignment) {
         // Check if previously declined or recalled
         const declinedAssignment = patientAssignments.find(a =>
           a.therapy_type === therapyType &&
           a.visit_type === "evaluation" &&
           a.status === "declined"
-        );
-
-        const recalledAssignment = patientAssignments.find(a =>
-          a.therapy_type === therapyType &&
-          a.visit_type === "evaluation" &&
-          a.status === "pending" &&
-          !a.therapist_id &&
-          !!a.recalled_from
         );
 
         entries.push({
@@ -122,8 +121,6 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
         agency: assignDialog.patient.agency || null,
       });
       if (!result?.success) throw new Error(result?.error || "Assignment could not be saved");
-      const updated = await getAssignments();
-      setAssignments(updated);
       await onRefresh?.();
       toast.success(`${assignDialog.patient.first_name} ${assignDialog.patient.last_name} assigned successfully`);
     } catch (err) {
@@ -144,14 +141,12 @@ export default function ReferralManagement({ patients, therapists, visits, agenc
     // assistants_allowed defaults to true if not set
     const assistantsAllowed = agencyRecord ? agencyRecord.assistants_allowed !== false : true;
 
-    return therapists.filter(t => {
-      if (t.status !== "active" || normalizeTherapyType(t.discipline) !== normalizedTherapyType) return false;
-      // Evaluations cannot be assigned to PTA/COTA
-      if (visitType === "evaluation" && PTA_COTA.includes(t.credentials?.trim().toUpperCase())) return false;
-      // If agency does not allow assistants, block PTA/COTA for treatment too
-      if (!assistantsAllowed && PTA_COTA.includes(t.credentials?.trim().toUpperCase())) return false;
-      return true;
-    });
+    return therapists.filter(t => canAssignTherapist(
+      t,
+      normalizedTherapyType,
+      visitType,
+      assistantsAllowed,
+    ));
   };
 
   const therapyColors = {

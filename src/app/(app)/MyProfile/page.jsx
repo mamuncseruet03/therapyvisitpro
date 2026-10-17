@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
-import { getTherapists, updateTherapist } from "@/lib/api-client/therapists";
+import { getMyTherapistProfile, updateMyTherapistProfile } from "@/lib/api-client/therapists";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,34 +29,41 @@ export default function MyProfile() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
   const [uploading, setUploading] = useState({});
-  const [therapists, setTherapists] = useState([]);
+  const [therapist, setTherapist] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const isAdmin = ["admin", "superuser"].includes(effectiveUser?.role) || ["admin", "superuser"].includes(effectiveUser?.user_type);
+  const canEdit = ["therapist", "admin", "superuser"].includes(effectiveUser?.user_type)
+    || ["admin", "superuser"].includes(effectiveUser?.role);
 
-  const loadTherapists = useCallback(async () => {
+  const loadTherapist = async () => {
     try {
-      const data = await getTherapists();
-      setTherapists(data);
+      const data = await getMyTherapistProfile(effectiveUser?.therapist_id);
+      setTherapist(data);
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => { loadTherapists(); }, [loadTherapists]);
+  useEffect(() => {
+    let active = true;
+    getMyTherapistProfile(effectiveUser?.therapist_id)
+      .then((data) => { if (active) setTherapist(data); })
+      .catch(console.error)
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, [effectiveUser?.therapist_id]);
 
-  const therapist = therapists.find(
-    t => t.email === effectiveUser?.email || t.full_name === effectiveUser?.full_name
-  );
-
-  const handleUpdate = async ({ id, data }) => {
+  const handleUpdate = async ({ data }) => {
     try {
-      const result = await updateTherapist(id, data);
+      const result = await updateMyTherapistProfile(effectiveUser?.therapist_id, data);
       if (result?.success) {
         setEditing(false);
         toast.success("Profile updated");
-        loadTherapists();
+        loadTherapist();
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to update profile");
     }
   };
@@ -84,10 +91,14 @@ export default function MyProfile() {
   };
 
   const handleSave = () => {
-    handleUpdate({ id: therapist.id, data: form });
+    handleUpdate({ data: form });
   };
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  if (isLoading) {
+    return <div className="py-16 text-center text-slate-400">Loading profile…</div>;
+  }
 
   if (!therapist) {
     return (
@@ -110,12 +121,12 @@ export default function MyProfile() {
           <h1 className="text-2xl font-bold text-slate-900">My Profile</h1>
           <p className="text-slate-500 text-sm mt-1">Your therapist credentials and information</p>
         </div>
-        {isAdmin && !editing && (
+        {canEdit && !editing && (
           <Button onClick={startEdit} className="gap-2 bg-teal-600 hover:bg-teal-700">
             <Pencil className="w-4 h-4" /> Edit Profile
           </Button>
         )}
-        {!isAdmin && (
+        {!canEdit && (
           <Badge variant="outline" className="text-slate-500">View Only</Badge>
         )}
       </div>
@@ -203,7 +214,7 @@ export default function MyProfile() {
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <FileText className="w-4 h-4 text-teal-600" /> Compliance Documents
           </CardTitle>
-          {!isAdmin && <p className="text-xs text-slate-400">Contact an admin to update documents.</p>}
+          {!canEdit && <p className="text-xs text-slate-400">Contact an admin to update documents.</p>}
         </CardHeader>
         <CardContent className="space-y-3">
           {FILE_FIELDS.map(({ key, label }) => {
@@ -227,7 +238,7 @@ export default function MyProfile() {
                   ) : (
                     <Badge variant="outline" className="text-slate-400 text-xs">Not uploaded</Badge>
                   )}
-                  {isAdmin && (
+                  {canEdit && (
                     <label className="cursor-pointer">
                       <input
                         type="file"

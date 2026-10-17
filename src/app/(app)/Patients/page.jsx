@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { getPatients, createPatient, updatePatient } from "@/lib/api-client/patients";
@@ -97,10 +97,13 @@ export default function Patients() {
       if (result?.success) {
         toast.success("Patient updated");
         setEditing(null);
-        loadPatients();
+        await loadPatients();
+        return result;
       }
+      throw new Error(result?.error || "Failed to update patient");
     } catch (err) {
-      toast.error("Failed to update patient");
+      toast.error(err instanceof Error ? err.message : "Failed to update patient");
+      return { success: false };
     }
   };
 
@@ -405,10 +408,10 @@ export default function Patients() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(p)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${p.first_name} ${p.last_name}`} onClick={() => setEditing(p)}>
                           <Pencil className="w-3.5 h-3.5 text-slate-400" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteTarget(p)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Delete ${p.first_name} ${p.last_name}`} onClick={() => setDeleteTarget(p)}>
                           <Trash2 className="w-3.5 h-3.5 text-red-400" />
                         </Button>
                       </div>
@@ -465,6 +468,15 @@ export default function Patients() {
       </Tabs>
 
       {formOpen && !editing && <PatientForm open={formOpen} onClose={() => setFormOpen(false)} onSave={(d) => handleCreate(d)} />}
+      {editing && (
+        <PatientForm
+          key={editing.id}
+          open
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSave={(data) => handleUpdate({ id: editing.id, data })}
+        />
+      )}
       {deleteTarget && (
         <DeletePatientDialog
           patient={deleteTarget}

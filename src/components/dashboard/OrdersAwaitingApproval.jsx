@@ -13,6 +13,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { createAssignment } from "@/lib/api-client/referrals";
 import { saveVisitNote } from "@/lib/api-client/visit-notes";
+import { canAssignTherapist, isAssistantTherapist } from "@/lib/assignments/eligibility";
 
 const therapyColor = {
   "Physical Therapy": "bg-blue-100 text-blue-700",
@@ -20,7 +21,6 @@ const therapyColor = {
   "Speech Therapy": "bg-amber-100 text-amber-700",
 };
 
-const PTA_COTA = ["PTA", "COTA"];
 
 export default function OrdersAwaitingApproval({ visits, therapists = [], agencies = [], onRefresh }) {
   const [approveDialog, setApproveDialog] = useState(null);
@@ -47,16 +47,12 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
   const getAvailableTherapists = (therapyType, patientAgency) => {
     const agencyRecord = agencies.find(a => a.name === patientAgency);
     const assistantsAllowed = agencyRecord ? agencyRecord.assistants_allowed !== false : true;
-    return therapists.filter((t) => {
-      if (t.status !== "active" || t.discipline !== therapyType) return false;
-      if (!assistantsAllowed && PTA_COTA.includes(t.credentials?.trim().toUpperCase())) return false;
-      return true;
-    });
+    return therapists.filter((t) => canAssignTherapist(t, therapyType, "treatment", assistantsAllowed));
   };
 
   const getSupervisingTherapists = (therapyType, patientAgency) =>
     getAvailableTherapists(therapyType, patientAgency).filter(
-      (therapist) => !PTA_COTA.includes(therapist.credentials?.trim().toUpperCase())
+      (therapist) => !isAssistantTherapist(therapist.credentials)
     );
 
   const handleApprove = async (visit) => {

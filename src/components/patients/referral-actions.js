@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
+import { therapistAssignmentError } from "@/lib/assignments/eligibility";
 
 const THERAPY_TYPE_DISPLAY = {
   pt: "Physical Therapy",
@@ -106,8 +107,30 @@ export async function createAssignment(data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
   const therapist = data.therapist_id
-    ? await prisma.therapist.findUnique({ where: { id: data.therapist_id }, select: { fullName: true } })
+    ? await prisma.therapist.findUnique({
+        where: { id: data.therapist_id },
+        select: { fullName: true, credentials: true, discipline: true, status: true },
+      })
     : null;
+  const agency = data.agency
+    ? await prisma.agency.findFirst({
+        where: { name: { equals: data.agency, mode: "insensitive" } },
+        select: { assistantsAllowed: true },
+      })
+    : null;
+
+  if (data.therapist_id && !therapist) {
+    return { error: "Therapist not found" };
+  }
+  if (therapist) {
+    const eligibilityError = therapistAssignmentError(
+      therapist,
+      data.therapy_type,
+      data.visit_type || "evaluation",
+      agency?.assistantsAllowed !== false,
+    );
+    if (eligibilityError) return { error: eligibilityError };
+  }
 
   const assignment = await prisma.referralAssignment.create({
     data: {
@@ -142,6 +165,38 @@ export async function createAssignment(data) {
 
 export async function updateAssignment(id, data) {
   const user = await requireRole("SUPERUSER", "ADMIN", "COORDINATOR", "THERAPIST");
+
+  if (data.therapist_id) {
+    const [assignment, therapist] = await Promise.all([
+      prisma.referralAssignment.findUnique({
+        where: { id },
+        select: { therapyType: true, visitType: true, agency: true },
+      }),
+      prisma.therapist.findUnique({
+        where: { id: data.therapist_id },
+        select: { fullName: true, credentials: true, discipline: true, status: true },
+      }),
+    ]);
+    if (!assignment) return { error: "Assignment not found" };
+    if (!therapist) return { error: "Therapist not found" };
+
+    const agency = assignment.agency
+      ? await prisma.agency.findFirst({
+          where: { name: { equals: assignment.agency, mode: "insensitive" } },
+          select: { assistantsAllowed: true },
+        })
+      : null;
+
+    const eligibilityError = therapistAssignmentError(
+      therapist,
+      assignment.therapyType,
+      assignment.visitType,
+      agency?.assistantsAllowed !== false,
+    );
+    if (eligibilityError) return { error: eligibilityError };
+
+    data = { ...data, therapist_name: therapist.fullName };
+  }
 
   const updateData = {};
   if (data.status !== undefined) updateData.status = data.status.toUpperCase();

@@ -36,7 +36,15 @@ const VISIT_TYPE_DISPLAY = {
 };
 
 function toSnakeCase(note) {
+  const storedDocuments = note.documents && typeof note.documents === "object" && !Array.isArray(note.documents)
+    ? note.documents
+    : {};
+  const formSnapshot = storedDocuments.formSnapshot && typeof storedDocuments.formSnapshot === "object"
+    ? storedDocuments.formSnapshot
+    : {};
+  const { formSnapshot: _storedSnapshot, ...publicDocuments } = storedDocuments;
   return {
+    ...formSnapshot,
     id: note.id,
     patient_id: note.patientId,
     patient_name: note.patientName,
@@ -75,7 +83,7 @@ function toSnakeCase(note) {
     reeval_data: note.reevalData || null,
     signatures: note.signatures || null,
     time_tracking: note.timeTracking || null,
-    documents: note.documents || null,
+    documents: Object.keys(publicDocuments).length > 0 ? publicDocuments : null,
     visit_diagnoses: note.visitDiagnoses || null,
     medical_diagnoses: note.visitDiagnoses?.medicalDiagnoses || note.visitDiagnoses?.medical_diagnoses || [],
     treatment_diagnoses: note.visitDiagnoses?.treatmentDiagnoses || note.visitDiagnoses?.treatment_diagnoses || [],
@@ -172,6 +180,8 @@ export async function getVisitFormData() {
         therapyTypes: true,
         diagnoses: true,
         authorizationNumber: true,
+        certPeriodStart: true,
+        certPeriodEnd: true,
       },
       orderBy: { lastName: "asc" },
     }),
@@ -186,7 +196,7 @@ export async function getVisitFormData() {
       orderBy: { fullName: "asc" },
     }),
     prisma.agency.findMany({
-      select: { id: true, name: true },
+      select: { id: true, name: true, documentMode: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -201,6 +211,8 @@ export async function getVisitFormData() {
       therapy_types: p.therapyTypes,
       diagnoses: p.diagnoses,
       authorization_number: p.authorizationNumber,
+      cert_period_start: p.certPeriodStart?.toISOString?.().split("T")[0] ?? null,
+      cert_period_end: p.certPeriodEnd?.toISOString?.().split("T")[0] ?? null,
     })),
     therapists: therapists.map((t) => ({
       id: t.id,
@@ -211,6 +223,7 @@ export async function getVisitFormData() {
     agencies: agencies.map((a) => ({
       id: a.id,
       name: a.name,
+      document_mode: a.documentMode?.toLowerCase() || "theradocs",
     })),
   };
 }
@@ -218,9 +231,43 @@ export async function getVisitFormData() {
 export async function saveVisitNote(data) {
   const user = await requireAuth();
 
+  // Dashboard order approval intentionally sends only these fields. Treat it
+  // as a narrow patch instead of rebuilding the entire required VisitNote
+  // payload with undefined patient/therapist/date values.
+  if (data.id && data.treatment_approved !== undefined && !data.patient_id) {
+    await prisma.visitNote.update({
+      where: { id: data.id },
+      data: {
+        treatmentApproved: Boolean(data.treatment_approved),
+        treatmentApprovedDate: data.treatment_approved_date
+          ? new Date(data.treatment_approved_date)
+          : data.treatment_approved
+            ? new Date()
+            : null,
+      },
+    });
+
+    const h = await headers();
+    await logAudit({
+      user,
+      action: "UPDATE",
+      resourceType: "VisitNote",
+      resourceId: data.id,
+      details: data.treatment_approved ? "Treatment frequency approved" : "Treatment frequency approval removed",
+      ipAddress: getClientIp(h),
+    });
+
+    return { success: true, id: data.id };
+  }
+
   const therapyEnum = THERAPY_ENUM[data.therapy_type] || data.therapy_type;
   const visitEnum = VISIT_TYPE_MAP[data.visit_type] || data.visit_type?.toUpperCase() || null;
   const statusEnum = (data.status || "draft").toUpperCase();
+
+  const { id: _snapshotId, documents: _snapshotDocuments, ...formSnapshot } = data;
+  const existingDocuments = data.documents && typeof data.documents === "object" && !Array.isArray(data.documents)
+    ? data.documents
+    : {};
 
   const visitData = {
     patientId: data.patient_id,
@@ -285,7 +332,9 @@ export async function saveVisitNote(data) {
     dischargeData: jsonSafe(data.discharge_data),
     reevalData: jsonSafe(data.reeval_data),
     signatures: jsonSafe(data.signatures),
-    documents: jsonSafe(data.documents),
+    // Keep the complete in-progress form so every tab can be restored after
+    // navigation. Structured columns remain the source for reports/details.
+    documents: jsonSafe({ ...existingDocuments, formSnapshot }),
     oasisData: jsonSafe(data.oasis_data),
     ptaSupervision: jsonSafe(data.pta_supervision),
     missedVisitData: jsonSafe(data.missed_visit_data),
@@ -318,6 +367,27 @@ export async function saveVisitNote(data) {
   });
 
   return { success: true, id: noteId };
+}
+
+export async function getLatestDraftVisitNote({ patientId, therapistId, visitType }) {
+  const user = await requireAuth();
+  const effectiveTherapistId = user.userType === "THERAPIST"
+    ? user.therapistId
+    : therapistId;
+
+  if (!patientId || !effectiveTherapistId) return null;
+
+  const note = await prisma.visitNote.findFirst({
+    where: {
+      patientId,
+      therapistId: effectiveTherapistId,
+      status: "DRAFT",
+      ...(visitType ? { visitType: VISIT_TYPE_MAP[visitType] || visitType.toUpperCase() } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return note ? toSnakeCase(note) : null;
 }
 
 export async function updateVisitNoteField(id, field, value) {

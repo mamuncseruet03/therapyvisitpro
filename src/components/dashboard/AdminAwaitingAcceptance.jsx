@@ -6,11 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock, Undo2, Trash2 } from "lucide-react";
 import { updateAssignment, deleteAssignment as deleteAssignmentAction } from "@/lib/api-client/referrals";
+import { toast } from "sonner";
 
-export default function AdminAwaitingAcceptance({ assignments, onRefresh }) {
-  const [recalling, setRecalling] = useState(false);
+export default function AdminAwaitingAcceptance({ assignments, onRefresh, onTakeBack }) {
+  const [recallingId, setRecallingId] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const pendingAssignments = assignments.filter(a => a.status === "pending");
+  const [takenBackIds, setTakenBackIds] = useState(() => new Set());
+  const pendingAssignments = assignments.filter(a =>
+    a.status === "pending" &&
+    !!(a.therapist_id || a.therapist_name) &&
+    !takenBackIds.has(a.id)
+  );
 
   const therapyColors = {
     "Physical Therapy": "bg-teal-100 text-teal-700",
@@ -19,25 +25,38 @@ export default function AdminAwaitingAcceptance({ assignments, onRefresh }) {
   };
 
   const recallAssignment = async (assignment) => {
-    setRecalling(true);
+    setRecallingId(assignment.id);
+    setTakenBackIds((current) => new Set(current).add(assignment.id));
+    const history = [...(assignment.assignment_history || []), {
+      therapist_id: assignment.therapist_id,
+      therapist_name: assignment.therapist_name,
+      action: "recalled",
+      date: new Date().toISOString(),
+    }];
+    onTakeBack?.(assignment.id, {
+      history,
+      recalledFrom: assignment.therapist_name,
+    });
     try {
-      const history = [...(assignment.assignment_history || []), {
-        therapist_id: assignment.therapist_id,
-        therapist_name: assignment.therapist_name,
-        action: "recalled",
-        date: new Date().toISOString(),
-      }];
       await updateAssignment(assignment.id, {
         therapist_id: null,
         therapist_name: null,
         recalled_from: assignment.therapist_name,
         assignment_history: history,
       });
-      onRefresh?.();
+      toast.success(`${assignment.patient_name} moved to Awaiting Assignment`);
+      await onRefresh?.();
     } catch (err) {
+      setTakenBackIds((current) => {
+        const next = new Set(current);
+        next.delete(assignment.id);
+        return next;
+      });
+      toast.error(err?.message || "Unable to take back assignment");
       console.error(err);
+      await onRefresh?.();
     } finally {
-      setRecalling(false);
+      setRecallingId(null);
     }
   };
 
@@ -107,7 +126,7 @@ export default function AdminAwaitingAcceptance({ assignments, onRefresh }) {
                         variant="ghost"
                         size="sm"
                         onClick={() => recallAssignment(assignment)}
-                        disabled={recalling}
+                        disabled={recallingId === assignment.id}
                         className="h-8 gap-1 text-slate-600 hover:text-slate-900"
                       >
                         <Undo2 className="w-3.5 h-3.5" />

@@ -19,7 +19,7 @@ export default function CompanyInformation() {
 
   const defaults = {
     company_name: 'TherapyDocs',
-    logo_url: '',
+    logo_url: '/apex-rehab-logo.png',
     tagline: 'Contract Therapy Services',
     description: 'Contract Therapy Services providing comprehensive therapy documentation solutions for healthcare professionals. We specialize in Physical Therapy, Occupational Therapy, and Speech Therapy services.',
     phone: '(555) 123-4567',
@@ -42,12 +42,14 @@ export default function CompanyInformation() {
 
   useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  const info = companyInfo || defaults;
+  const info = companyInfo
+    ? { ...companyInfo, logo_url: companyInfo.logo_url || defaults.logo_url }
+    : defaults;
 
   const canEdit = effectiveUser?.role === 'superuser' || effectiveUser?.user_type === 'superuser';
 
   const handleEdit = () => {
-    setFormData(companyInfo || defaults);
+    setFormData(info);
     setIsEditing(true);
   };
 

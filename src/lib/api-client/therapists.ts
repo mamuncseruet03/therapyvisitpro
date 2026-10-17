@@ -5,6 +5,22 @@ export async function getTherapists() {
   return handleResponse(res);
 }
 
+export async function getMyTherapistProfile(therapistId?: string | null) {
+  const query = therapistId ? `?therapistId=${encodeURIComponent(therapistId)}` : "";
+  const res = await fetch(apiUrl(`/api/v1/therapists/me${query}`));
+  return handleResponse(res);
+}
+
+export async function updateMyTherapistProfile(therapistId: string | null | undefined, data: unknown) {
+  const query = therapistId ? `?therapistId=${encodeURIComponent(therapistId)}` : "";
+  const res = await fetch(apiUrl(`/api/v1/therapists/me${query}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return handleResponse(res);
+}
+
 export async function getTherapistById(id: string) {
   const res = await fetch(apiUrl(`/api/v1/therapists/${id}`));
   return handleResponse(res);

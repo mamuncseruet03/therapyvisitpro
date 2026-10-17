@@ -21,6 +21,7 @@ function EditVisitNoteContent() {
   const [patients, setPatients] = useState([]);
   const [therapists, setTherapists] = useState([]);
   const [agencies, setAgencies] = useState([]);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -48,17 +49,26 @@ function EditVisitNoteContent() {
       if (result?.success) {
         toast.success("Visit note updated successfully");
         router.push(`/VisitNoteDetail?id=${id}`);
+      } else {
+        toast.error("Failed to update visit note");
       }
     } catch (err) {
+      console.error(err);
       toast.error("Failed to update visit note");
+      throw err;
     }
   };
 
   const handleAutoSave = async (data) => {
+    setAutoSaveStatus("saving");
     try {
-      await saveVisitNote({ ...data, id, status: "draft" });
+      const result = await saveVisitNote({ ...data, id, status: "draft" });
+      if (!result?.success) throw new Error("Autosave failed");
+      setAutoSaveStatus("saved");
     } catch (err) {
       console.error(err);
+      setAutoSaveStatus("error");
+      throw err;
     }
   };
 
@@ -124,6 +134,7 @@ function EditVisitNoteContent() {
         agencies={agencies}
         onSave={handleSave}
         onAutoSave={handleAutoSave}
+        autoSaveStatus={autoSaveStatus}
         initial={visit}
       />
     </div>

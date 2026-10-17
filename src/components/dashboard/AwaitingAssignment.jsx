@@ -11,13 +11,13 @@ import { UserPlus, Trash2, AlertTriangle, History } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { updateAssignment, deleteAssignment as deleteAssignmentAction } from "@/lib/api-client/referrals";
+import { canAssignTherapist } from "@/lib/assignments/eligibility";
 
 const therapyColors = {
   "Physical Therapy": "bg-teal-100 text-teal-700",
   "Occupational Therapy": "bg-purple-100 text-purple-700",
   "Speech Therapy": "bg-amber-100 text-amber-700",
 };
-const PTA_COTA = ["PTA", "COTA"];
 
 export default function AwaitingAssignment({ assignments, therapists = [], agencies = [], onRefresh }) {
   const [assignDialog, setAssignDialog] = useState(null);
@@ -75,12 +75,13 @@ export default function AwaitingAssignment({ assignments, therapists = [], agenc
   // Filter therapists by matching discipline
   const eligibleTherapists = assignDialog
     ? therapists.filter((t) => {
-        if (t.status === "inactive" || t.discipline !== assignDialog.therapy_type) return false;
-        const isAssistant = PTA_COTA.includes(t.credentials?.trim().toUpperCase());
-        if (assignDialog.visit_type === "evaluation" && isAssistant) return false;
         const agency = agencies.find((item) => item.name === assignDialog.agency);
-        if (agency?.assistants_allowed === false && isAssistant) return false;
-        return true;
+        return canAssignTherapist(
+          t,
+          assignDialog.therapy_type,
+          assignDialog.visit_type,
+          agency?.assistants_allowed !== false,
+        );
       })
     : [];
 

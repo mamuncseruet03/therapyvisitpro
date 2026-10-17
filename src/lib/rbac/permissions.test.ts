@@ -137,6 +137,16 @@ describe("hasRouteAccessByPath", () => {
     expect(hasApiAccessByPath("THERAPIST", "/api/v1/invoices")).toBe(false);
     expect(hasApiAccessByPath("COORDINATOR", "/api/v1/deletion-requests")).toBe(false);
     expect(hasApiAccessByPath("THERAPIST", "/api/v1/visit-notes")).toBe(true);
+    expect(hasApiAccessByPath("THERAPIST", "/api/v1/therapists/schedule")).toBe(true);
+    expect(hasApiAccessByPath("THERAPIST", "/api/v1/therapists/me")).toBe(true);
+    expect(hasApiAccessByPath("THERAPIST", "/api/v1/therapists")).toBe(false);
+  });
+
+  it("lets a superuser navigate therapist-only pages while impersonating", () => {
+    expect(hasRouteAccessByPath("SUPERUSER", "/MySchedule")).toBe(true);
+    expect(hasRouteAccessByPath("SUPERUSER", "/MyTasks")).toBe(true);
+    expect(hasRouteAccessByPath("SUPERUSER", "/MyProfile")).toBe(true);
+    expect(hasRouteAccessByPath("SUPERUSER", "/WeeklyClose")).toBe(true);
   });
 });
 

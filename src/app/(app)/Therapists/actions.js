@@ -8,6 +8,7 @@ import { getClientIp } from "@/lib/audit/logger";
 import { createTherapistSchema, updateTherapistSchema } from "@/lib/validations/therapist";
 
 const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
+const optional = (value) => value ?? undefined;
 
 // Builds the object createTherapistSchema/updateTherapistSchema expect
 // (camelCase, upper-case enums, short-code discipline) from the snake_case
@@ -22,14 +23,14 @@ function toValidationInput(data) {
   return {
     fullName: data.full_name,
     discipline: DISCIPLINE_MAP[data.discipline] || data.discipline,
-    credentials: data.credentials,
-    licenseNumber: data.license_number,
-    email: data.email,
-    phone: data.phone,
+    credentials: optional(data.credentials),
+    licenseNumber: optional(data.license_number),
+    email: optional(data.email),
+    phone: optional(data.phone),
     hireDate: data.hire_date || undefined,
     annualReviewDate: data.annual_review_date || undefined,
     status: data.status ? upper(data.status) : undefined,
-    facilities: data.facilities,
+    facilities: optional(data.facilities),
   };
 }
 

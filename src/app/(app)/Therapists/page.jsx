@@ -37,14 +37,16 @@ export default function Therapists() {
     try {
       const data = await getTherapists();
       setTherapists(data);
-    } catch (err) {
+    } catch {
       console.error(err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadTherapists(); }, [loadTherapists]);
+  useEffect(() => {
+    queueMicrotask(loadTherapists);
+  }, [loadTherapists]);
 
   const handleCreate = async (d) => {
     try {
@@ -54,7 +56,7 @@ export default function Therapists() {
         setFormOpen(false);
         loadTherapists();
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to create therapist");
     }
   };
@@ -65,10 +67,13 @@ export default function Therapists() {
       if (result?.success) {
         toast.success("Therapist updated");
         setEditing(null);
-        loadTherapists();
+        await loadTherapists();
+        return result;
       }
+      throw new Error(result?.error || "Failed to update therapist");
     } catch (err) {
-      toast.error("Failed to update therapist");
+      toast.error(err instanceof Error ? err.message : "Failed to update therapist");
+      return { success: false };
     }
   };
 
@@ -79,7 +84,7 @@ export default function Therapists() {
         toast.success("Therapist deleted");
         loadTherapists();
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to delete therapist");
     }
   };
@@ -166,7 +171,7 @@ export default function Therapists() {
                 <TableCell>
                   <div className="flex gap-1">
                     {canEdit && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(t)}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${t.full_name}`} onClick={() => setEditing(t)}>
                         <Pencil className="w-3.5 h-3.5 text-slate-400" />
                       </Button>
                     )}
@@ -184,7 +189,7 @@ export default function Therapists() {
       </Card>
 
       {formOpen && <TherapistForm open={formOpen} onClose={() => setFormOpen(false)} onSave={(d) => handleCreate(d)} />}
-      {editing && <TherapistForm open={!!editing} onClose={() => setEditing(null)} onSave={(d) => handleUpdate(d)} initial={editing} />}
+      {editing && <TherapistForm key={editing.id} open onClose={() => setEditing(null)} onSave={(d) => handleUpdate(d)} initial={editing} />}
     </div>
   );
 }

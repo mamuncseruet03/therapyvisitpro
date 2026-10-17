@@ -54,3 +54,13 @@ export async function getVisitFormData() {
   const res = await fetch(apiUrl("/api/v1/visit-notes/form-data"));
   return handleResponse(res);
 }
+
+export async function getLatestDraftVisitNote(params: {
+  patientId: string;
+  therapistId: string;
+  visitType?: string;
+}) {
+  const query = new URLSearchParams(params);
+  const res = await fetch(apiUrl(`/api/v1/visit-notes/draft?${query.toString()}`));
+  return handleResponse(res);
+}

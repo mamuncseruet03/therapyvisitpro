@@ -69,19 +69,24 @@ async function sendInvitationEmail({ email, userType, temporaryPassword }) {
   });
 }
 
-// Deliberately excludes `discipline`: the schema's Discipline enum expects
-// short codes (PT/OT/ST), but the UserManagement edit form's discipline <Select>
-// sends the long-form label ("Physical Therapy", ...) and updateUser has
-// always persisted it as-is (unlike Therapists' updateTherapist, which maps
-// through DISCIPLINE_MAP first) — so User.discipline's real stored shape is
-// long-form, not the schema's short-form. Left unvalidated to avoid rejecting
-// currently-working edits.
+const DISCIPLINE_MAP = {
+  PT: "PT",
+  OT: "OT",
+  ST: "ST",
+  "Physical Therapy": "PT",
+  "Occupational Therapy": "OT",
+  "Speech Therapy": "ST",
+};
+
 function toValidationInput(data) {
   return {
     phone: data.phone,
     userType: data.user_type ? upper(data.user_type) : undefined,
     credentials: data.credentials,
     licenseNumber: data.license_number,
+    discipline: data.discipline
+      ? DISCIPLINE_MAP[data.discipline] || data.discipline
+      : undefined,
   };
 }
 
@@ -139,7 +144,9 @@ export async function getUsers() {
 export async function inviteUser({ email, userType }) {
   const user = await requireRole("SUPERUSER", "ADMIN");
 
-  const parsed = inviteUserSchema.safeParse({ email, userType: upper(userType) });
+  const normalizedEmail = email?.trim().toLowerCase();
+
+  const parsed = inviteUserSchema.safeParse({ email: normalizedEmail, userType: upper(userType) });
   if (!parsed.success) {
     return { error: parsed.error.issues[0].message };
   }
@@ -192,7 +199,7 @@ export async function inviteUser({ email, userType }) {
     user,
     action: "CREATE",
     resourceType: "User",
-    details: `Invited user ${email} as ${userType}`,
+    details: `Invited user ${v.email} as ${v.userType.toLowerCase()}`,
     ipAddress: getClientIp(h),
   });
 
@@ -226,7 +233,7 @@ export async function updateUser({ id, data }) {
   if (v.phone !== undefined) updateData.phone = v.phone;
   if (v.credentials !== undefined) updateData.credentials = v.credentials;
   if (v.licenseNumber !== undefined) updateData.licenseNumber = v.licenseNumber;
-  if (data.discipline !== undefined) updateData.discipline = data.discipline || null;
+  if (data.discipline !== undefined) updateData.discipline = v.discipline || null;
 
   await prisma.user.update({ where: { id }, data: updateData });
 

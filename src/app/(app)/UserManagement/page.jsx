@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Pencil, UserPlus, RefreshCw, Link2 } from "lucide-react";
+import { Search, Pencil, UserPlus, RefreshCw, Link2 } from "lucide-react";
 import UserProfileBadge from "@/components/users/UserProfileBadge";
 import { toast } from "sonner";
 import {
@@ -28,6 +28,17 @@ const DISCIPLINE_LABELS = {
   SPEECH_THERAPY: "Speech Therapy",
 };
 
+const EMPTY_INVITE_FORM = { email: "", user_type: "therapist" };
+const USER_TYPE_OPTIONS = [
+  { value: "superuser", label: "Superuser" },
+  { value: "admin", label: "Admin" },
+  { value: "therapist", label: "Therapist" },
+  { value: "guest", label: "Guest" },
+  { value: "client", label: "Agency" },
+  { value: "coordinator", label: "Coordinator" },
+  { value: "hr", label: "HR" },
+];
+
 export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -35,7 +46,7 @@ export default function UserManagement() {
   const [inviting, setInviting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [inviteForm, setInviteForm] = useState({ email: "", user_type: "therapist" });
+  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [editForm, setEditForm] = useState({});
   const [syncing, setSyncing] = useState(false);
   const [users, setUsers] = useState([]);
@@ -52,7 +63,9 @@ export default function UserManagement() {
     }
   }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => {
+    queueMicrotask(loadUsers);
+  }, [loadUsers]);
 
   const handleUpdateUser = async ({ id, data }) => {
     const result = await updateUser({ id, data });
@@ -69,22 +82,31 @@ export default function UserManagement() {
       const result = await syncTherapistsToUsers();
       toast.success(`Sync complete: ${result.created} created, ${result.linked} linked`);
       loadUsers();
-    } catch (err) {
+    } catch {
       toast.error("Sync failed");
     } finally {
       setSyncing(false);
     }
   };
 
-  const handleInvite = async () => {
+  const handleInviteOpenChange = (open) => {
+    setInviteOpen(open);
+    if (!open) setInviteForm(EMPTY_INVITE_FORM);
+  };
+
+  const handleInvite = async (event) => {
+    event?.preventDefault();
+    const email = inviteForm.email.trim().toLowerCase();
+    if (!email || inviting) return;
+
     setInviting(true);
     try {
-      const result = await inviteUser({ email: inviteForm.email, userType: inviteForm.user_type });
+      const result = await inviteUser({ email, userType: inviteForm.user_type });
       if (result.error) { toast.error(result.error); return; }
       setInviteOpen(false);
-      setInviteForm({ email: "", user_type: "therapist" });
-      toast.success(`Invite sent to ${inviteForm.email}`);
-      loadUsers();
+      setInviteForm(EMPTY_INVITE_FORM);
+      toast.success(`Invite sent to ${email}`);
+      await loadUsers();
     } catch (err) {
       console.error(err);
       toast.error("Failed to send invite: " + (err?.message || "Unknown error"));
@@ -212,12 +234,12 @@ export default function UserManagement() {
       </Card>
 
       {/* Invite Dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+      <Dialog open={inviteOpen} onOpenChange={handleInviteOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite New User</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <form id="invite-user-form" className="space-y-4 py-2" onSubmit={handleInvite}>
             <div>
               <Label>Email *</Label>
               <Input
@@ -225,6 +247,9 @@ export default function UserManagement() {
                 placeholder="user@example.com"
                 value={inviteForm.email}
                 onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                autoComplete="email"
+                required
+                autoFocus
               />
             </div>
             <div>
@@ -234,20 +259,16 @@ export default function UserManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="superuser">Superuser</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="therapist">Therapist</SelectItem>
-                  <SelectItem value="guest">Guest</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                  <SelectItem value="coordinator">Coordinator</SelectItem>
-                  <SelectItem value="hr">HR</SelectItem>
+                  {USER_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          </form>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-            <Button onClick={handleInvite} disabled={!inviteForm.email || inviting} className="bg-teal-600 hover:bg-teal-700">
+            <Button type="button" variant="outline" onClick={() => handleInviteOpenChange(false)}>Cancel</Button>
+            <Button type="submit" form="invite-user-form" disabled={!inviteForm.email.trim() || inviting} className="bg-teal-600 hover:bg-teal-700">
               {inviting ? "Sending…" : "Send Invite"}
             </Button>
           </DialogFooter>
@@ -301,9 +322,9 @@ export default function UserManagement() {
                       <SelectValue placeholder="Select discipline" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
-                      <SelectItem value="Occupational Therapy">Occupational Therapy</SelectItem>
-                      <SelectItem value="Speech Therapy">Speech Therapy</SelectItem>
+                      <SelectItem value="PT">Physical Therapy</SelectItem>
+                      <SelectItem value="OT">Occupational Therapy</SelectItem>
+                      <SelectItem value="ST">Speech Therapy</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -38,6 +38,20 @@ export default function AdminDashboard() {
     loadDashboard();
   }, [loadDashboard]);
 
+  const handleAssignmentTakenBack = useCallback((assignmentId, { history, recalledFrom }) => {
+    setAssignments((current) => current.map((assignment) =>
+      assignment.id === assignmentId
+        ? {
+            ...assignment,
+            therapist_id: null,
+            therapist_name: null,
+            recalled_from: recalledFrom,
+            assignment_history: history,
+          }
+        : assignment
+    ));
+  }, []);
+
   const activePatients = patients.filter((p) => p.status === "active").length;
   const drafts = visits.filter((v) => v.status === "draft").length;
 
@@ -254,9 +268,9 @@ export default function AdminDashboard() {
         </Card>
       )}
 
-      <ReferralManagement patients={patients} therapists={therapists} visits={visits} agencies={agencies} onRefresh={loadDashboard} />
+      <ReferralManagement patients={patients} therapists={therapists} visits={visits} assignments={assignments} agencies={agencies} onRefresh={loadDashboard} />
 
-      <AdminAwaitingAcceptance assignments={assignments} onRefresh={loadDashboard} />
+      <AdminAwaitingAcceptance assignments={assignments} onRefresh={loadDashboard} onTakeBack={handleAssignmentTakenBack} />
 
       <AwaitingAssignment assignments={assignments} therapists={therapists} agencies={agencies} onRefresh={loadDashboard} />
 

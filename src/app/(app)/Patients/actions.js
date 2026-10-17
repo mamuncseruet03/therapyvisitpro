@@ -18,6 +18,8 @@ const THERAPY_TYPE_DISPLAY = {
   OCCUPATIONAL_THERAPY: "Occupational Therapy",
   SPEECH_THERAPY: "Speech Therapy",
 };
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const optional = (value) => value ?? undefined;
 
 // Builds the object createPatientSchema/updatePatientSchema expect (camelCase,
 // upper-case enums) from the snake_case wire payload. Deliberately excludes
@@ -36,20 +38,20 @@ function toValidationInput(data) {
     // Zod optional enums accept undefined, not "", so normalize it before
     // validation. This is the common referral path when Sex is not supplied.
     sex: data.sex ? upper(data.sex) : undefined,
-    ssnEncrypted: data.ssn,
-    medicareNumber: data.medicare_number,
-    phone: data.phone,
-    email: data.email,
-    address: data.address,
-    city: data.city,
-    state: data.state,
-    zip: data.zip,
-    agencyId: data.agency_id,
-    insurance: data.insurance,
-    coordinatorEmail: data.coordinator_email,
+    ssnEncrypted: optional(data.ssn),
+    medicareNumber: optional(data.medicare_number),
+    phone: optional(data.phone),
+    email: optional(data.email),
+    address: optional(data.address),
+    city: optional(data.city),
+    state: optional(data.state),
+    zip: optional(data.zip),
+    agencyId: optional(data.agency_id),
+    insurance: optional(data.insurance),
+    coordinatorEmail: optional(data.coordinator_email),
     certPeriodStart: data.cert_period_start || undefined,
     certPeriodEnd: data.cert_period_end || undefined,
-    authorizationNumber: data.authorization_number,
+    authorizationNumber: optional(data.authorization_number),
     authorizedVisits:
       data.authorized_visits !== undefined && data.authorized_visits !== null && data.authorized_visits !== ""
         ? Number(data.authorized_visits)
@@ -57,8 +59,8 @@ function toValidationInput(data) {
     therapyTypes: Array.isArray(data.therapy_types)
       ? data.therapy_types.map((type) => THERAPY_TYPE_MAP[type] || upper(type)?.replaceAll(" ", "_"))
       : undefined,
-    notes: data.notes,
-    status: upper(data.status),
+    notes: optional(data.notes),
+    status: data.status ? upper(data.status) : undefined,
     responsibleParty:
       data.responsible_party_name || data.responsible_party_phone
         ? {
@@ -195,6 +197,7 @@ export async function createPatient(data) {
       lastName: v.lastName,
       dateOfBirth: v.dateOfBirth ?? null,
       sex: v.sex ?? null,
+      ssnEncrypted: v.ssnEncrypted ?? null,
       medicareNumber: v.medicareNumber ?? null,
       phone: v.phone ?? null,
       email: v.email ?? null,
@@ -289,6 +292,7 @@ export async function updatePatient(id, data) {
     if (v.lastName !== undefined) updateData.lastName = v.lastName;
     if (v.dateOfBirth !== undefined) updateData.dateOfBirth = v.dateOfBirth ?? null;
     if (v.sex !== undefined) updateData.sex = v.sex ?? null;
+    if (v.ssnEncrypted !== undefined) updateData.ssnEncrypted = v.ssnEncrypted ?? null;
     if (v.medicareNumber !== undefined) updateData.medicareNumber = v.medicareNumber ?? null;
     if (v.phone !== undefined) updateData.phone = v.phone ?? null;
     if (v.email !== undefined) updateData.email = v.email ?? null;
@@ -298,11 +302,24 @@ export async function updatePatient(id, data) {
     if (v.zip !== undefined) updateData.zip = v.zip ?? null;
     if (v.agencyId !== undefined) updateData.agencyId = v.agencyId ?? null;
     if (v.insurance !== undefined) updateData.insurance = v.insurance ?? null;
+    if (v.coordinatorEmail !== undefined) updateData.coordinatorEmail = v.coordinatorEmail ?? null;
+    if (v.certPeriodStart !== undefined) updateData.certPeriodStart = v.certPeriodStart ?? null;
+    if (v.certPeriodEnd !== undefined) updateData.certPeriodEnd = v.certPeriodEnd ?? null;
+    if (v.authorizationNumber !== undefined) updateData.authorizationNumber = v.authorizationNumber ?? null;
+    if (v.authorizedVisits !== undefined) updateData.authorizedVisits = v.authorizedVisits ?? null;
     if (v.status !== undefined) updateData.status = v.status;
     if (v.therapyTypes !== undefined) updateData.therapyTypes = v.therapyTypes;
     if (v.notes !== undefined) updateData.notes = v.notes ?? null;
-    if (v.responsibleParty !== undefined) updateData.responsibleParty = v.responsibleParty;
-    if (data.primary_physician !== undefined || data.referring_physician !== undefined) {
+    if (["responsible_party_name", "responsible_party_phone", "responsible_party_relationship"].some((key) => hasOwn(data, key))) {
+      updateData.responsibleParty = data.responsible_party_name || data.responsible_party_phone || data.responsible_party_relationship
+        ? {
+            name: data.responsible_party_name || null,
+            phone: data.responsible_party_phone || null,
+            relationship: data.responsible_party_relationship || null,
+          }
+        : null;
+    }
+    if (["primary_physician", "primary_physician_phone", "referring_physician", "referring_physician_phone"].some((key) => hasOwn(data, key))) {
       updateData.physicians = {
         primaryName: data.primary_physician || null,
         primaryPhone: data.primary_physician_phone || null,

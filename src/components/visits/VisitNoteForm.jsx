@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { getPatientVisits } from "@/lib/api-client/visit-notes";
 import { Input } from "@/components/ui/input";
@@ -100,7 +100,7 @@ function GoalInterventionInput({ interventions, onAdd, onRemove }) {
   );
 }
 
-export default function VisitNoteForm({ patients = [], therapists = [], agencies = [], onSave, onAutoSave, initial, preselectedPatientId = "", preselectedTherapyType = "" }) {
+export default function VisitNoteForm({ patients = [], therapists = [], agencies = [], onSave, onAutoSave, initial, autoSaveStatus = "idle", preselectedPatientId = "", preselectedTherapyType = "", preselectedVisitType = "", preselectedTherapistId = "" }) {
   const effectiveUser = useCurrentUser();
   const isAdmin = ["admin", "superuser"].includes(effectiveUser?.role) || ["admin", "superuser"].includes(effectiveUser?.user_type);
 
@@ -110,9 +110,9 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
     treatment_diagnoses: [],
     ...initial,
   } : {
-    patient_id: preselectedPatientId, therapist_id: "", visit_date: new Date().toISOString().split("T")[0],
+    patient_id: preselectedPatientId, therapist_id: preselectedTherapistId, visit_date: new Date().toISOString().split("T")[0],
     time_in: "", time_out: "", punch_in_reason: "", punch_out_reason: "",
-    therapy_type: preselectedTherapyType, agency: "", visit_type: "treatment", duration_minutes: 0,
+    therapy_type: preselectedTherapyType, agency: "", visit_type: preselectedVisitType || "treatment", duration_minutes: 0,
     cpt_codes: [], subjective: "", objective: "", assessment: "", plan: "",
     medical_history: "", prior_function: "", living_environment: "",
     rom_evaluation: {}, strength_evaluation: {},
@@ -123,6 +123,8 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
     status: "draft",
     vitals: { blood_pressure: "", heart_rate: "", respiratory_rate: "", temperature: "", oxygen_saturation: "", pain_level: "" },
   });
+  const formRef = useRef(form);
+  formRef.current = form;
 
   const [activeTab, setActiveTab] = useState("Intake");
 
@@ -183,11 +185,11 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
   }, [isAssistant]);
 
   useEffect(() => {
-    if (!form.patient_id || !form.therapy_type || initial) return;
+    if (!form.patient_id || !form.therapy_type || initial || preselectedVisitType) return;
     const priorVisits = patientVisits.filter(v => v.therapy_type === form.therapy_type && (v.status === "completed" || v.status === "signed"));
     if (priorVisits.length === 0) set("visit_type", "evaluation");
     else if (form.visit_type === "evaluation") set("visit_type", "treatment");
-  }, [form.patient_id, form.therapy_type, patientVisits.length]);
+  }, [form.patient_id, form.therapy_type, patientVisits.length, preselectedVisitType]);
 
   const handlePDFUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -227,36 +229,52 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
   const currentTabIndex = tabs.indexOf(activeTab);
   const goNext = async () => {
     if (currentTabErrors.length > 0) return;
-    if (currentTabIndex < tabs.length - 1) { autoSaveCurrentForm(); setActiveTab(tabs[currentTabIndex + 1]); }
+    if (currentTabIndex < tabs.length - 1) {
+      await autoSaveCurrentForm();
+      setActiveTab(tabs[currentTabIndex + 1]);
+    }
   };
   const goPrev = () => { if (currentTabIndex > 0) setActiveTab(tabs[currentTabIndex - 1]); };
 
-  const autoSaveCurrentForm = () => {
-    if (!form.patient_id || !form.therapist_id) return;
-    const cleanedVitals = form.vitals ? {
-      blood_pressure: form.vitals.blood_pressure || null,
-      heart_rate: form.vitals.heart_rate === "" ? null : form.vitals.heart_rate,
-      respiratory_rate: form.vitals.respiratory_rate === "" ? null : form.vitals.respiratory_rate,
-      temperature: form.vitals.temperature === "" ? null : form.vitals.temperature,
-      oxygen_saturation: form.vitals.oxygen_saturation === "" ? null : form.vitals.oxygen_saturation,
-      pain_level: form.vitals.pain_level === "" ? null : form.vitals.pain_level,
+  const autoSaveCurrentForm = useCallback(() => {
+    const currentForm = formRef.current;
+    if (!currentForm.patient_id || !currentForm.therapist_id) return Promise.resolve();
+    const currentPatient = patients.find((p) => p.id === currentForm.patient_id);
+    const currentTherapist = therapists.find((t) => t.id === currentForm.therapist_id);
+    const cleanedVitals = currentForm.vitals ? {
+      blood_pressure: currentForm.vitals.blood_pressure || null,
+      heart_rate: currentForm.vitals.heart_rate === "" ? null : currentForm.vitals.heart_rate,
+      respiratory_rate: currentForm.vitals.respiratory_rate === "" ? null : currentForm.vitals.respiratory_rate,
+      temperature: currentForm.vitals.temperature === "" ? null : currentForm.vitals.temperature,
+      oxygen_saturation: currentForm.vitals.oxygen_saturation === "" ? null : currentForm.vitals.oxygen_saturation,
+      pain_level: currentForm.vitals.pain_level === "" ? null : currentForm.vitals.pain_level,
     } : null;
     const data = {
-      ...form, vitals: cleanedVitals, status: form.status === "signed" ? "signed" : "draft",
-      patient_name: selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name}` : "",
-      therapist_name: selectedTherapist?.full_name || "",
-      agency: form.agency || selectedPatient?.agency || "",
+      ...currentForm, vitals: cleanedVitals, status: currentForm.status === "signed" ? "signed" : "draft",
+      patient_name: currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : "",
+      therapist_name: currentTherapist?.full_name || "",
+      agency: currentForm.agency || currentPatient?.agency || "",
     };
     const autoSaveFn = onAutoSave || onSave;
-    if (autoSaveFn) autoSaveFn(data).catch(() => {});
-  };
+    return autoSaveFn ? autoSaveFn(data) : Promise.resolve();
+  }, [onAutoSave, onSave, patients, therapists]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      autoSaveCurrentForm().catch(() => {});
+    }, 10_000);
+    return () => window.clearInterval(intervalId);
+  }, [autoSaveCurrentForm]);
 
   const TabBar = () => (
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm -mx-0 mb-6">
       <div className="flex overflow-x-auto">
         {tabs.map((tab, idx) => (
           <button key={tab} type="button"
-            onClick={() => { if (tab !== activeTab) autoSaveCurrentForm(); setActiveTab(tab); }}
+            onClick={async () => {
+              if (tab !== activeTab) await autoSaveCurrentForm().catch(() => {});
+              setActiveTab(tab);
+            }}
             className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab ? "border-teal-600 text-teal-700 bg-teal-50" : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}
           >
             <span className="mr-1.5 text-xs text-slate-400">{idx + 1}.</span>{tab}
@@ -388,6 +406,12 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
   return (
     <div className="space-y-4 max-w-6xl">
+      <div className="flex justify-end min-h-5 text-xs">
+        {autoSaveStatus === "saving" && <span className="text-slate-500">Saving draft…</span>}
+        {autoSaveStatus === "saved" && <span className="text-emerald-600">Draft saved automatically</span>}
+        {autoSaveStatus === "restored" && <span className="text-teal-600">Previous draft restored</span>}
+        {autoSaveStatus === "error" && <span className="text-red-600">Autosave failed — please try again</span>}
+      </div>
       <TabBar />
 
       {/* INTAKE */}

@@ -37,7 +37,7 @@ import { getCompanyInfo } from "@/lib/api-client/company-info";
 
 const BASE44_MENU_PERMISSIONS = {
   admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
-  therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
+  therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation", "WeeklyClose"],
   coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
   hr: ["Dashboard", "Therapists", "CompanyInformation"],
   guest: [],

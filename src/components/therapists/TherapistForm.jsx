@@ -28,12 +28,40 @@ const RATE_ROWS = [
   { key: "geriatrics", label: "Geriatrics" },
 ];
 
+const EMPTY_FORM = {
+  full_name: "", discipline: "", credentials: "", license_number: "",
+  email: "", phone: "", status: "active", rates: {}, personal_files: {},
+  disciplinary_actions: [], facilities: [], hire_date: "", annual_review_date: "",
+};
+
+const dateInputValue = (value) => {
+  if (!value) return "";
+  const stringValue = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(stringValue)) return stringValue.slice(0, 10);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+};
+
+const formValues = (therapist) => {
+  const values = Object.fromEntries(
+    Object.entries(EMPTY_FORM).map(([key, fallback]) => [key, therapist?.[key] ?? fallback])
+  );
+
+  return {
+    ...values,
+    hire_date: dateInputValue(therapist?.hire_date),
+    annual_review_date: dateInputValue(therapist?.annual_review_date),
+    rates: therapist?.rates ? structuredClone(therapist.rates) : {},
+    personal_files: therapist?.personal_files ? structuredClone(therapist.personal_files) : {},
+    disciplinary_actions: therapist?.disciplinary_actions
+      ? structuredClone(therapist.disciplinary_actions)
+      : [],
+    facilities: [...(therapist?.facilities || [])],
+  };
+};
+
 export default function TherapistForm({ open, onClose, onSave, initial }) {
-  const [form, setForm] = useState(initial || {
-    full_name: "", discipline: "", credentials: "", license_number: "",
-    email: "", phone: "", status: "active", rates: {}, personal_files: {},
-    hire_date: "", annual_review_date: "",
-  });
+  const [form, setForm] = useState(() => formValues(initial));
   const [saving, setSaving] = useState(false);
   const [createUser, setCreateUser] = useState(false);
   const [inviteStatus, setInviteStatus] = useState(null); // null | 'success' | 'error'
@@ -82,7 +110,7 @@ export default function TherapistForm({ open, onClose, onSave, initial }) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Therapist" : "New Therapist"}</DialogTitle>
@@ -262,7 +290,7 @@ export default function TherapistForm({ open, onClose, onSave, initial }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !form.full_name || !form.discipline}
+          <Button type="button" onClick={handleSave} disabled={saving || !form.full_name || !form.discipline}
             className="bg-teal-600 hover:bg-teal-700">
             {saving ? "Saving…" : "Save Therapist"}
           </Button>

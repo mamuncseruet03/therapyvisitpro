@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { getPatients } from "@/lib/api-client/patients";
@@ -8,7 +8,7 @@ import { getCalendarVisits, getTherapistsForSchedule } from "@/lib/api-client/ca
 import { getAssignments } from "@/lib/api-client/referrals";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search, Users } from "lucide-react";
 
@@ -28,34 +28,31 @@ export default function MyPatients() {
   const [visits, setVisits] = useState([]);
   const [assignments, setAssignments] = useState([]);
 
-  const loadPatients = useCallback(async () => {
-    try {
-      const [patientData, visitData, therapistData, assignmentData] = await Promise.all([
-        getPatients(),
-        getCalendarVisits(),
-        getTherapistsForSchedule(),
-        getAssignments(),
-      ]);
-      setAllPatients(patientData);
-      setVisits(visitData);
-      setAllTherapists(therapistData);
-      setAssignments(assignmentData);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingPatients(false);
-    }
+  useEffect(() => {
+    let active = true;
+    Promise.all([getPatients(), getCalendarVisits(), getTherapistsForSchedule(), getAssignments()])
+      .then(([patientData, visitData, therapistData, assignmentData]) => {
+        if (!active) return;
+        setAllPatients(patientData);
+        setVisits(visitData);
+        setAllTherapists(therapistData);
+        setAssignments(assignmentData);
+      })
+      .catch(console.error)
+      .finally(() => { if (active) setLoadingPatients(false); });
+    return () => { active = false; };
   }, []);
-
-  useEffect(() => { loadPatients(); }, [loadPatients]);
 
   const name = effectiveUser?.full_name;
   const uid = effectiveUser?.id;
+  const linkedTherapistId = effectiveUser?.therapist_id;
   const userEmail = effectiveUser?.email;
 
   // Find the matching Therapist entity by email or name
   const myTherapistRecord = allTherapists.find(
-    t => t.email === userEmail || t.full_name?.toLowerCase() === name?.toLowerCase()
+    t => t.id === linkedTherapistId ||
+      t.email === userEmail ||
+      t.full_name?.toLowerCase() === name?.toLowerCase()
   );
   const therapistEntityName = myTherapistRecord?.full_name;
   const therapistEntityId = myTherapistRecord?.id;
@@ -64,11 +61,13 @@ export default function MyPatients() {
   const myPatientIds = new Set([
     ...visits
       .filter(v => v.therapist_id === uid || v.therapist_id === therapistEntityId ||
+        v.therapist_id === linkedTherapistId ||
         v.therapist_name === name || v.therapist_name === therapistEntityName)
       .map(v => v.patient_id),
     ...assignments
       .filter(a => a.therapist_name === name || a.therapist_name === therapistEntityName ||
-        a.therapist_id === uid || a.therapist_id === therapistEntityId)
+        a.therapist_id === uid || a.therapist_id === linkedTherapistId ||
+        a.therapist_id === therapistEntityId)
       .map(a => a.patient_id),
   ]);
 

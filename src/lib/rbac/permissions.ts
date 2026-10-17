@@ -90,11 +90,12 @@ const ROUTE_PERMISSIONS: Record<RouteKey, UserType[]> = {
   "audit-logs": ["SUPERUSER", "ADMIN"],
   documents: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   hr: ["SUPERUSER", "ADMIN", "HR"],
-  "my-schedule": ["THERAPIST"],
-  "my-tasks": ["THERAPIST", "COORDINATOR"],
-  "my-labor": ["COORDINATOR"],
-  "my-profile": ["THERAPIST"],
-  "weekly-close": ["THERAPIST"],
+  // SUPERUSER needs these routes while using the in-app impersonation flow.
+  "my-schedule": ["SUPERUSER", "THERAPIST"],
+  "my-tasks": ["SUPERUSER", "THERAPIST", "COORDINATOR"],
+  "my-labor": ["SUPERUSER", "COORDINATOR"],
+  "my-profile": ["SUPERUSER", "THERAPIST"],
+  "weekly-close": ["SUPERUSER", "THERAPIST"],
   referrals: ["SUPERUSER", "ADMIN", "COORDINATOR"],
   "communication-notes": ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   "deletion-requests": ["SUPERUSER", "ADMIN"],
@@ -125,6 +126,15 @@ export function hasRouteAccessByPath(userType: UserType, pathname: string): bool
 export function hasApiAccessByPath(userType: UserType, pathname: string): boolean {
   const segments = pathname.split("/").filter(Boolean);
   if (segments[0] !== "api" || segments[1] !== "v1") return true;
+
+  // These are read-only, authenticated therapist views. Keep the broader
+  // /therapists CRUD group restricted to administrative roles.
+  if (
+    segments[2] === "therapists" &&
+    (segments[3] === "schedule" || segments[3] === "me")
+  ) {
+    return ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR", "HR"].includes(userType);
+  }
 
   const routeKey = API_ROUTE_MAP[segments[2]];
   return routeKey ? hasRouteAccess(userType, routeKey) : true;

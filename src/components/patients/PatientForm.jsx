@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,20 +13,43 @@ import { getAgenciesForSelect } from "@/lib/api-client/patients";
 
 const THERAPY_TYPES = ["Physical Therapy", "Occupational Therapy", "Speech Therapy"];
 
+const EMPTY_FORM = {
+  first_name: "", last_name: "", date_of_birth: "", sex: "", ssn: "", medicare_number: "",
+  address: "", city: "", state: "", zip: "", phone: "", email: "",
+  responsible_party_name: "", responsible_party_phone: "", responsible_party_relationship: "",
+  primary_physician: "", primary_physician_phone: "",
+  referring_physician: "", referring_physician_phone: "",
+  diagnoses: [], therapy_types: [], agency: "", insurance: "",
+  cert_period_start: "", cert_period_end: "", authorization_number: "", authorized_visits: "",
+  notes: "", status: "active",
+};
+
+const dateInputValue = (value) => {
+  if (!value) return "";
+  const stringValue = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(stringValue)) return stringValue.slice(0, 10);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+};
+
+const formValues = (patient) => {
+  const values = Object.fromEntries(
+    Object.entries(EMPTY_FORM).map(([key, fallback]) => [key, patient?.[key] ?? fallback])
+  );
+
+  return {
+    ...values,
+    date_of_birth: dateInputValue(patient?.date_of_birth),
+    cert_period_start: dateInputValue(patient?.cert_period_start),
+    cert_period_end: dateInputValue(patient?.cert_period_end),
+    diagnoses: patient?.diagnoses?.map((diagnosis) => ({ ...diagnosis })) || [],
+    therapy_types: [...(patient?.therapy_types || [])],
+  };
+};
+
 export default function PatientForm({ open, onClose, onSave, initial }) {
   const [agencies, setAgencies] = useState([]);
-
-  const [form, setForm] = useState(initial || {
-    first_name: "", last_name: "", date_of_birth: "",
-    address: "", city: "", state: "", zip: "", phone: "", email: "",
-    responsible_party_name: "", responsible_party_phone: "", responsible_party_relationship: "",
-    primary_physician: "", primary_physician_phone: "",
-    referring_physician: "", referring_physician_phone: "",
-    diagnoses: [],
-    therapy_types: [], agency: "", insurance: "",
-    cert_period_start: "", cert_period_end: "", authorization_number: "", authorized_visits: "",
-    notes: "", status: "active",
-  });
+  const [form, setForm] = useState(() => formValues(initial));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -69,7 +92,7 @@ export default function PatientForm({ open, onClose, onSave, initial }) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Patient" : "New Patient"}</DialogTitle>
@@ -306,7 +329,7 @@ export default function PatientForm({ open, onClose, onSave, initial }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !form.first_name || !form.last_name || !form.cert_period_start || !form.cert_period_end}
+          <Button type="button" onClick={handleSave} disabled={saving || !form.first_name || !form.last_name || !form.cert_period_start || !form.cert_period_end}
             className="bg-teal-600 hover:bg-teal-700">
             {saving ? "Saving..." : "Save Patient"}
           </Button>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ function formatDateOnly(value) {
 }
 
 export default function AwaitingAcceptance({ assignments, user, therapistId, patients, onRefresh }) {
+  const router = useRouter();
   const [viewDialog, setViewDialog] = useState(null);
   const [declineDialog, setDeclineDialog] = useState(null);
   const [declineReason, setDeclineReason] = useState("");
@@ -78,8 +80,37 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
     setSubmitting(true);
     try {
       await updateAssignment(assignment.id, { status: "accepted" });
-      toast.success(`Accepted referral for ${assignment.patient_name}`);
+      toast.success(`Accepted ${assignment.patient_name}. Use Schedule to open the evaluation visit note.`);
       onRefresh?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to accept assignment");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const buildVisitNoteUrl = (assignment) => {
+    const params = new URLSearchParams({
+      patientId: assignment.patient_id,
+      therapyType: assignment.therapy_type,
+      visitType: assignment.visit_type || "evaluation",
+    });
+    if (assignment.therapist_id || therapistId) {
+      params.set("therapistId", assignment.therapist_id || therapistId);
+    }
+    params.set("assignmentId", assignment.id);
+    return `/NewVisitNote?${params.toString()}`;
+  };
+
+  const handleAcceptAndSchedule = async (assignment) => {
+    setSubmitting(true);
+    try {
+      if (assignment.status !== "accepted") {
+        await updateAssignment(assignment.id, { status: "accepted" });
+      }
+      toast.success(`Accepted ${assignment.patient_name}. Opening the evaluation visit note.`);
+      router.push(buildVisitNoteUrl(assignment));
     } catch (err) {
       console.error(err);
       toast.error("Failed to accept assignment");
@@ -168,7 +199,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
         });
         await updateAssignment(scheduleDialog.id, { status: "scheduled" });
       }
-      toast.success("Visits scheduled successfully");
+      toast.success(weekSchedule ? "Visits scheduled successfully" : "Evaluation scheduled and added to My Schedule");
       onRefresh?.();
       setScheduleDialog(null);
     } catch (err) {
@@ -287,7 +318,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                         <Button size="sm" onClick={() => handleAcceptOnly(assignment)} disabled={submitting} className="bg-green-600 hover:bg-green-700 gap-1 w-full">
                           <Check className="w-3.5 h-3.5" /> Accept
                         </Button>
-                        <Button size="sm" onClick={() => openScheduleDialog(assignment)} className="bg-teal-600 hover:bg-teal-700 gap-1 w-full">
+                        <Button size="sm" onClick={() => handleAcceptAndSchedule(assignment)} disabled={submitting} className="bg-teal-600 hover:bg-teal-700 gap-1 w-full">
                           <Calendar className="w-3.5 h-3.5" /> Accept & Schedule
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => { setDeclineDialog(assignment); setDeclineRequired(false); }} className="border-red-200 text-red-600 hover:bg-red-50 gap-1 w-full">
@@ -359,13 +390,16 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
         <Dialog open={!!scheduleDialog} onOpenChange={() => setScheduleDialog(null)}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Schedule All Visits — {scheduleDialog.patient_name}</DialogTitle>
+              <DialogTitle>
+                {weekSchedule ? "Schedule All Visits" : scheduleDialog.visit_type === "evaluation" ? "Schedule Evaluation" : "Schedule Visit"}
+                {` — ${scheduleDialog.patient_name}`}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="bg-slate-50 rounded-lg p-3">
                 <p className="text-sm font-medium text-slate-800">{scheduleDialog.patient_name}</p>
                 <p className="text-xs text-slate-500">
-                  {scheduleDialog.therapy_type} · Treatment
+                  {scheduleDialog.therapy_type} · {(scheduleDialog.visit_type || "evaluation").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                   {scheduleDialog.agency ? ` · ${scheduleDialog.agency}` : ""}
                 </p>
                 {scheduleDialog.supervising_therapist_name && (
