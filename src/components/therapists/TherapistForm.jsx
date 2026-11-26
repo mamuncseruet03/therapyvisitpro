@@ -1,5 +1,7 @@
 "use client";
 
+import TherapistCoverage from "./TherapistCoverage";
+
 import React, { useState } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { Input } from "@/components/ui/input";
@@ -158,6 +160,18 @@ export default function TherapistForm({ open, onClose, onSave, initial }) {
               <Input value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} />
             </div>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm">
+              License Expiration Date
+              <Input type="date" value={form.personal_files?.license_settings?.expiration_date || ""} onChange={(event) => set("personal_files", { ...form.personal_files, license_settings: { ...form.personal_files?.license_settings, expiration_date: event.target.value } })} />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.personal_files?.license_settings?.suspend_on_expiry === true} onChange={(event) => set("personal_files", { ...form.personal_files, license_settings: { ...form.personal_files?.license_settings, suspend_on_expiry: event.target.checked } })} />
+              Suspend user profile when license expired
+            </label>
+          </div>
+          <TherapistCoverage value={form.personal_files?.service_area}
+            onChange={(service_area) => set("personal_files", { ...form.personal_files, service_area })} />
           {/* HR Section */}
           <div className="border rounded-lg p-4 bg-indigo-50/40 space-y-3">
             <div className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">HR Information</div>

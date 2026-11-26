@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createUserSchema, loginSchema, updateUserSchema } from "./user";
+import { changePasswordSchema, createUserSchema, forgotPasswordSchema, loginSchema, resetPasswordSchema, updateUserSchema } from "./user";
 
 describe("User validation", () => {
   const validUser = {
@@ -79,5 +79,28 @@ describe("Login validation", () => {
   it("validates email format", () => {
     const result = loginSchema.safeParse({ email: "not-email", password: "pass" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("Change password validation", () => {
+  it("accepts a current password and a new password of at least 8 characters", () => {
+    expect(changePasswordSchema.safeParse({ currentPassword: "old-password", newPassword: "new-password" }).success).toBe(true);
+  });
+
+  it("rejects a short new password", () => {
+    expect(changePasswordSchema.safeParse({ currentPassword: "old-password", newPassword: "short" }).success).toBe(false);
+  });
+});
+
+describe("Password reset validation", () => {
+  it("normalizes a valid forgot-password email", () => {
+    const result = forgotPasswordSchema.parse({ email: " User@Test.com " });
+    expect(result.email).toBe("user@test.com");
+  });
+
+  it("requires a strong enough password and a non-trivial token", () => {
+    expect(resetPasswordSchema.safeParse({ token: "a".repeat(32), newPassword: "new-password" }).success).toBe(true);
+    expect(resetPasswordSchema.safeParse({ token: "short", newPassword: "new-password" }).success).toBe(false);
+    expect(resetPasswordSchema.safeParse({ token: "a".repeat(32), newPassword: "short" }).success).toBe(false);
   });
 });

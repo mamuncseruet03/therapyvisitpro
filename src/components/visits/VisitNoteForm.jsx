@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_THERA_DOCS_MESSAGE } from "@/lib/agency-preferences";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { getPatientVisits } from "@/lib/api-client/visit-notes";
@@ -9,13 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { X, Plus, Save, CheckCircle, ChevronRight, ChevronLeft } from "lucide-react";
+import { X, Plus, Save, CheckCircle, ChevronRight, ChevronLeft, Clock3 } from "lucide-react";
 import SignatureCapture from "./SignatureCapture";
 import AgencyDocumentsSection from "./AgencyDocumentsSection";
 import DischargeOasisSection from "./DischargeOasisSection";
 import SLPSwallowSection from "./SLPSwallowSection";
 import AdditionalUploads from "./AdditionalUploads";
 import DCPlanEducationSection from "./DCPlanEducationSection";
+import { CPT_REQUIRED_MESSAGE, hasCptCode, requiresCptCode } from "@/lib/visit-billing";
 import MobilitySection from "./MobilitySection";
 import SignatureTab from "./SignatureTab";
 import LibraryDocumentsPicker from "./LibraryDocumentsPicker";
@@ -29,7 +31,6 @@ import ObjectiveTab from "./ObjectiveTab";
 import AdlsTab from "./AdlsTab";
 import AssessmentTab from "./AssessmentTab";
 import GoalsPlanTab from "./GoalsPlanTab";
-import SoapNoteTab from "./SoapNoteTab";
 import TreatmentRenderedTab from "./TreatmentRenderedTab";
 import TreatmentGoalsTab from "./TreatmentGoalsTab";
 import RecertGoalsTab from "./RecertGoalsTab";
@@ -40,42 +41,49 @@ import NotesTab from "./NotesTab";
 const COMMON_CPT = ["97110", "97112", "97116", "97140", "97530", "97535", "97542", "97150", "97161", "97162", "97163", "92507", "92508", "92526"];
 
 function getTabsForVisitType(visitType, agencyDocsOnly = false, therapyType = "", addOns = {}) {
-  if (agencyDocsOnly) return ["Intake", "Signature"];
+  if (agencyDocsOnly) return ["Intake", "Billing and Signature"];
   if (visitType === "evaluation") {
+    if (therapyType === "Occupational Therapy") {
+      const tabs = ["Intake", "Vitals", "Subjective", "Objective", "Functional Status", "Assessment", "Goals & Plan", "DC Plan & Edu"];
+      if (addOns.nomnc) tabs.push("NOMNC");
+      tabs.push("Billing and Signature");
+      return tabs;
+    }
     const mobilityTab = therapyType === "Occupational Therapy" ? "Function" : therapyType === "Speech Therapy" ? "Swallow" : "Mobility";
     const tabs = ["Intake", "Vitals", "Subjective", "Objective", "ADL's", mobilityTab, "Assessment", "Goals & Plan", "DC Plan & Edu"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "treatment") {
-    const tabs = ["Intake", "Vitals", "SOAP Note", "Treatment Rendered", "Goals"];
+    const functionTab = therapyType === "Occupational Therapy" ? "Function" : therapyType === "Speech Therapy" ? "Swallow" : "Mobility";
+    const tabs = ["Intake", "Vitals", "Subjective", "Objective", "ADL\'s", functionTab, "Treatment Rendered", "Goals"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "re_evaluation") {
     const tabs = ["Intake", "Vitals", "Re-Evaluation", "Treatment Rendered", "Goals", "Plan"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "recertification") {
     const tabs = ["Intake", "Vitals", "Re-Evaluation", "Treatment Rendered", "Goals", "Plan"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "discharge_with_visit") {
     const tabs = ["Intake", "Vitals", "Treatment Rendered", "Discharge"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "discharge_without_visit") {
     const tabs = ["Intake", "Discharge"];
     if (addOns.nomnc) tabs.push("NOMNC");
-    tabs.push("Signature");
+    tabs.push("Billing and Signature");
     return tabs;
   } else if (visitType === "eval_refused" || visitType === "missed_visit") {
-    return ["Intake", "Notes", "Signature"];
+    return ["Intake", "Notes", "Billing and Signature"];
   }
-  return ["Intake", "Vitals", "Notes", "Signature"];
+  return ["Intake", "Vitals", "Notes", "Billing and Signature"];
 }
 
 function GoalInterventionInput({ interventions, onAdd, onRemove }) {
@@ -105,10 +113,12 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
   const isAdmin = ["admin", "superuser"].includes(effectiveUser?.role) || ["admin", "superuser"].includes(effectiveUser?.user_type);
 
   const [form, setForm] = useState(initial ? {
-    eval_treatment_goals: [{ goal: "", interventions: [], functional_status: "" }],
     medical_diagnoses: [],
     treatment_diagnoses: [],
     ...initial,
+    eval_treatment_goals: Array.isArray(initial.eval_treatment_goals) && initial.eval_treatment_goals.length > 0
+      ? initial.eval_treatment_goals
+      : [{ goal: "", interventions: [], functional_status: "" }],
   } : {
     patient_id: preselectedPatientId, therapist_id: preselectedTherapistId, visit_date: new Date().toISOString().split("T")[0],
     time_in: "", time_out: "", punch_in_reason: "", punch_out_reason: "",
@@ -125,11 +135,16 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
   });
   const formRef = useRef(form);
   formRef.current = form;
+  const lastSavedFormSnapshotRef = useRef(JSON.stringify(form));
+  const queuedFormSnapshotsRef = useRef(new Set());
+  const autoSaveQueueRef = useRef(Promise.resolve());
 
   const [activeTab, setActiveTab] = useState("Intake");
 
   const patientAgencyName = form.agency || patients.find((p) => p.id === form.patient_id)?.agency;
   const patientAgencyRecord = agencies.find((a) => a.name === patientAgencyName);
+  const agencyVitalConfig = patientAgencyRecord?.vital_signs_config || null;
+  const noTheraDocs = patientAgencyRecord?.preferences?.no_thera_docs === true;
   const agencyDocsOnly = patientAgencyRecord?.document_mode === "agency_docs";
 
   const addOns = {
@@ -222,6 +237,9 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       therapist_name: selectedTherapist?.full_name || "",
       agency: form.agency || selectedPatient?.agency || "",
     };
+    // Do not let a pending draft request finish after the final save and
+    // restore older field values/status.
+    await autoSaveQueueRef.current.catch(() => {});
     if (onSave) await onSave(data);
     setSaving(false);
   };
@@ -239,6 +257,11 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
   const autoSaveCurrentForm = useCallback(() => {
     const currentForm = formRef.current;
     if (!currentForm.patient_id || !currentForm.therapist_id) return Promise.resolve();
+    const currentSnapshot = JSON.stringify(currentForm);
+    if (
+      currentSnapshot === lastSavedFormSnapshotRef.current ||
+      queuedFormSnapshotsRef.current.has(currentSnapshot)
+    ) return Promise.resolve();
     const currentPatient = patients.find((p) => p.id === currentForm.patient_id);
     const currentTherapist = therapists.find((t) => t.id === currentForm.therapist_id);
     const cleanedVitals = currentForm.vitals ? {
@@ -250,21 +273,37 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       pain_level: currentForm.vitals.pain_level === "" ? null : currentForm.vitals.pain_level,
     } : null;
     const data = {
-      ...currentForm, vitals: cleanedVitals, status: currentForm.status === "signed" ? "signed" : "draft",
+      ...currentForm, vitals: cleanedVitals, status: currentForm.status || "draft",
       patient_name: currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : "",
       therapist_name: currentTherapist?.full_name || "",
       agency: currentForm.agency || currentPatient?.agency || "",
     };
     const autoSaveFn = onAutoSave || onSave;
-    return autoSaveFn ? autoSaveFn(data) : Promise.resolve();
+    if (!autoSaveFn) return Promise.resolve();
+
+    // Serialize writes so an older, slower request can never finish after a
+    // newer request and overwrite fields from another tab.
+    queuedFormSnapshotsRef.current.add(currentSnapshot);
+    const queuedSave = autoSaveQueueRef.current
+      .catch(() => {})
+      .then(() => autoSaveFn(data))
+      .then((result) => {
+        lastSavedFormSnapshotRef.current = currentSnapshot;
+        return result;
+      })
+      .finally(() => {
+        queuedFormSnapshotsRef.current.delete(currentSnapshot);
+      });
+    autoSaveQueueRef.current = queuedSave;
+    return queuedSave;
   }, [onAutoSave, onSave, patients, therapists]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
+    const timeoutId = window.setTimeout(() => {
       autoSaveCurrentForm().catch(() => {});
-    }, 10_000);
-    return () => window.clearInterval(intervalId);
-  }, [autoSaveCurrentForm]);
+    }, 2_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [form, autoSaveCurrentForm]);
 
   const TabBar = () => (
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm -mx-0 mb-6">
@@ -286,6 +325,7 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
   const getTabErrors = (tab) => {
     const errors = [];
+    if (noTheraDocs) errors.push(NO_THERA_DOCS_MESSAGE);
     if (tab === "Intake") {
       if (!form.patient_id) errors.push("Patient is required");
       if (!form.therapist_id) errors.push("Therapist is required");
@@ -296,9 +336,10 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       if (!hasPatientId) errors.push("At least one Patient Identification method is required");
     }
     if (tab === "Vitals") {
+      const vitalRequired = agencyVitalConfig?.required !== false;
       const vitalsSkipped = !!(form.vitals_not_taken_reason || "").trim();
       const hasVitals = form.vitals && (form.vitals.blood_pressure || form.vitals.heart_rate || form.vitals.respiratory_rate || form.vitals.temperature || form.vitals.oxygen_saturation);
-      if (!vitalsSkipped && !hasVitals) errors.push("Vital signs are required — enter at least one value or provide a reason for not taking vitals");
+      if (vitalRequired && !vitalsSkipped && !hasVitals) errors.push("Vital signs are required — enter at least one value or provide a reason for not taking vitals");
     }
     if (tab === "Assessment" && form.visit_type === "evaluation") {
       if (!(form.assessment || "").trim()) errors.push("Clinical Impression & Prognosis is required");
@@ -330,7 +371,7 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       if (!((form.dc_plan || {}).treatment_performed || "").trim()) errors.push("Treatment Performed This Visit is required");
       if (!((form.dc_plan || {}).rehab_potential || "").trim()) errors.push("Rehabilitation Potential is required");
     }
-    if (tab === "Signature") {
+    if (tab === "Billing and Signature") {
       if (!form.therapist_signature) errors.push("Therapist Signature is required");
       const patientSigOk = form.patient_signature || (form.patient_signature_unable && (form.patient_signature_unable_reason || "").trim());
       if (!patientSigOk) {
@@ -354,6 +395,24 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
   const currentTabErrors = getTabErrors(activeTab);
 
+  const punchOutNow = () => {
+    const timeOut = new Date().toTimeString().slice(0, 5);
+    setForm((previous) => {
+      let durationMinutes = previous.duration_minutes;
+      if (previous.time_in) {
+        const [inHour, inMinute] = previous.time_in.split(":").map(Number);
+        const [outHour, outMinute] = timeOut.split(":").map(Number);
+        const elapsed = (outHour * 60 + outMinute) - (inHour * 60 + inMinute);
+        durationMinutes = elapsed >= 0 ? elapsed : elapsed + 24 * 60;
+      }
+      return {
+        ...previous,
+        time_out: timeOut,
+        duration_minutes: durationMinutes,
+      };
+    });
+  };
+
   const evalMissingFields = form.visit_type === "evaluation" ? (() => {
     const missing = [];
     if (!(form.assessment || "").trim()) missing.push("Clinical Impression & Prognosis");
@@ -365,6 +424,9 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
     if (!(cc.reason || "").trim()) missing.push("Care Coordination Reason");
     return missing;
   })() : [];
+  const completionErrors = requiresCptCode(form.billing_payer) && !hasCptCode(form.cpt_codes)
+    ? [...evalMissingFields, CPT_REQUIRED_MESSAGE]
+    : evalMissingFields;
 
   const NavButtons = () => (
     <div className="flex flex-col gap-2 pt-2 pb-4">
@@ -384,17 +446,17 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
           </Button>
         ) : (
           <div className="flex flex-col items-end gap-2">
-            {evalMissingFields.length > 0 && (
+            {completionErrors.length > 0 && (
               <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 max-w-xs text-right">
                 <p className="font-semibold mb-1">Required to complete:</p>
-                <ul className="list-disc list-inside space-y-0.5">{evalMissingFields.map((f) => <li key={f}>{f}</li>)}</ul>
+                <ul className="list-disc list-inside space-y-0.5">{completionErrors.map((f) => <li key={f}>{f}</li>)}</ul>
               </div>
             )}
             <div className="flex gap-3">
               <Button variant="outline" size="lg" onClick={() => handleSave("draft")} disabled={saving || !form.patient_id || !form.therapist_id}>
-                <Save className="w-4 h-4 mr-2" />Save Draft
+                <Save className="w-4 h-4 mr-2" />{form.visit_type === "evaluation" ? "Complete at a Later Time" : "Save Draft"}
               </Button>
-              <Button size="lg" onClick={() => handleSave("completed")} disabled={saving || !form.patient_id || !form.therapist_id || evalMissingFields.length > 0} className="bg-teal-600 hover:bg-teal-700">
+              <Button size="lg" onClick={() => handleSave("completed")} disabled={saving || !form.patient_id || !form.therapist_id || completionErrors.length > 0} className="bg-teal-600 hover:bg-teal-700">
                 <CheckCircle className="w-4 h-4 mr-2" />Complete & Sign
               </Button>
             </div>
@@ -406,12 +468,36 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
   return (
     <div className="space-y-4 max-w-6xl">
+      {noTheraDocs && <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{NO_THERA_DOCS_MESSAGE}</p>}
       <div className="flex justify-end min-h-5 text-xs">
         {autoSaveStatus === "saving" && <span className="text-slate-500">Saving draft…</span>}
         {autoSaveStatus === "saved" && <span className="text-emerald-600">Draft saved automatically</span>}
         {autoSaveStatus === "restored" && <span className="text-teal-600">Previous draft restored</span>}
         {autoSaveStatus === "error" && <span className="text-red-600">Autosave failed — please try again</span>}
+        {autoSaveStatus === "session-expired" && (
+          <span className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 font-medium text-amber-800">
+            Login session expired. Keep this page open and{" "}
+            <a href="/login" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              sign in again in a new tab
+            </a>
+            , then press Next.
+          </span>
+        )}
       </div>
+      {form.visit_type === "evaluation" && form.time_in && !form.time_out && (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Visit is still punched in</p>
+              <p className="text-xs text-amber-700">Punch out when the visit ends. You can continue editing and complete the evaluation later.</p>
+            </div>
+          </div>
+          <Button type="button" onClick={punchOutNow} className="shrink-0 bg-amber-700 text-white hover:bg-amber-800">
+            <Clock3 className="mr-2 h-4 w-4" />Punch Out Now
+          </Button>
+        </div>
+      )}
       <TabBar />
 
       {/* INTAKE */}
@@ -421,31 +507,46 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
       {/* VITALS */}
       {activeTab === "Vitals" && (
-        <VitalsTab form={form} set={set} />
+        <VitalsTab form={form} set={set} vitalConfig={agencyVitalConfig} />
       )}
 
       {/* SUBJECTIVE (evaluation) */}
-      {activeTab === "Subjective" && form.visit_type === "evaluation" && (
-        <SubjectiveTab form={form} set={set} />
+      {activeTab === "Subjective" && ["evaluation", "treatment"].includes(form.visit_type) && (
+        <>
+          <SubjectiveTab form={form} set={set} />
+          {form.visit_type === "treatment" && <DCPlanEducationSection form={form} set={set} educationOnly />}
+        </>
       )}
 
       {/* OBJECTIVE (evaluation) */}
-      {activeTab === "Objective" && form.visit_type === "evaluation" && (
-        <ObjectiveTab form={form} set={set} />
+      {activeTab === "Objective" && ["evaluation", "treatment"].includes(form.visit_type) && (
+        <div className="space-y-4">
+          <ObjectiveTab form={form} set={set} />
+          {form.visit_type === "treatment" && ["objective", "assessment", "plan"].map((field) => (
+            <label key={field} className="block capitalize">
+              {field}
+              <textarea className="mt-1 block w-full rounded-md border p-2" rows={3} value={form[field] || ""} onChange={(event) => set(field, event.target.value)} />
+            </label>
+          ))}
+        </div>
       )}
 
       {/* ADLs (evaluation) */}
-      {activeTab === "ADL's" && form.visit_type === "evaluation" && (
+      {activeTab === "ADL's" && ["evaluation", "treatment"].includes(form.visit_type) && (
         <AdlsTab form={form} set={set} />
       )}
 
+      {activeTab === "Functional Status" && form.visit_type === "evaluation" && form.therapy_type === "Occupational Therapy" && (
+        <div className="space-y-6"><AdlsTab form={form} set={set} /><MobilitySection form={form} set={set} isOT /></div>
+      )}
+
       {/* MOBILITY / FUNCTION (evaluation) */}
-      {(activeTab === "Mobility" || activeTab === "Function") && form.visit_type === "evaluation" && (
+      {(activeTab === "Mobility" || activeTab === "Function") && ["evaluation", "treatment"].includes(form.visit_type) && (
         <MobilitySection form={form} set={set} isOT={form.therapy_type === "Occupational Therapy"} />
       )}
 
       {/* SWALLOW (SLP evaluation) */}
-      {activeTab === "Swallow" && form.visit_type === "evaluation" && (
+      {activeTab === "Swallow" && ["evaluation", "treatment"].includes(form.visit_type) && (
         <SLPSwallowSection swallow={form.slp_swallow || {}} onChange={(v) => set("slp_swallow", v)} />
       )}
 
@@ -467,11 +568,6 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
         </>
       )}
 
-      {/* SOAP NOTE (treatment) */}
-      {activeTab === "SOAP Note" && form.visit_type === "treatment" && (
-        <SoapNoteTab form={form} set={set} />
-      )}
-
       {/* TREATMENT RENDERED */}
       {activeTab === "Treatment Rendered" && (
         <TreatmentRenderedTab form={form} set={set} patientVisits={patientVisits} />
@@ -484,7 +580,7 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
       {/* GOALS (treatment) */}
       {activeTab === "Goals" && form.visit_type === "treatment" && (
-        <TreatmentGoalsTab form={form} set={set} patientVisits={patientVisits} />
+        <TreatmentGoalsTab form={form} set={set} patientVisits={patientVisits} canAdd={!!selectedTherapistCredentials && !/\b(PTA|COTA|SLPA)\b/.test(selectedTherapistCredentials) && /\b(PT|DPT|OT|OTR|SLP)\b/.test(selectedTherapistCredentials)} />
       )}
 
       {/* GOALS (recertification) */}
@@ -526,7 +622,7 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       )}
 
       {/* SIGNATURE */}
-      {activeTab === "Signature" && (
+      {activeTab === "Billing and Signature" && (
         <SignatureTab form={form} set={set} patientAgencyName={patientAgencyName} patientAgencyRecord={patientAgencyRecord} agencyDocsOnly={agencyDocsOnly}
           onAutoSave={(data) => { const autoSaveFn = onAutoSave || onSave; if (autoSaveFn) autoSaveFn({ ...data, status: form.status === "signed" ? "signed" : "draft" }).catch(() => {}); }} />
       )}

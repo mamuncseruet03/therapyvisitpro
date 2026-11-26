@@ -21,11 +21,11 @@ const EDUCATION_TOPICS = [
   "Community Resources",
 ];
 
-export default function DCPlanEducationSection({ form, set }) {
+export default function DCPlanEducationSection({ form, set, educationOnly = false }) {
   return (
     <div className="space-y-6">
       {/* Discharge Plan */}
-      <Card className="border-l-4 border-l-emerald-500">
+      {!educationOnly && <Card className="border-l-4 border-l-emerald-500">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold text-slate-800">Discharge Plan <span className="text-red-500 text-sm">&#9733;</span></CardTitle>
         </CardHeader>
@@ -74,6 +74,7 @@ export default function DCPlanEducationSection({ form, set }) {
         </CardContent>
       </Card>
 
+      }
       {/* Patient / Caregiver Education */}
       <Card className="border-l-4 border-l-blue-400">
         <CardHeader className="pb-3">
@@ -187,7 +188,7 @@ export default function DCPlanEducationSection({ form, set }) {
       </Card>
 
       {/* Treatment Performed / Rehab Potential / Barriers */}
-      <Card className="border-l-4 border-l-violet-400">
+      {!educationOnly && <Card className="border-l-4 border-l-violet-400">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold text-slate-800">Treatment & Progress <span className="text-red-500 text-sm">&#9733;</span></CardTitle>
         </CardHeader>
@@ -230,6 +231,7 @@ export default function DCPlanEducationSection({ form, set }) {
           </div>
         </CardContent>
       </Card>
+      }
     </div>
   );
 }

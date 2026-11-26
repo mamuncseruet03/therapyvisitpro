@@ -38,6 +38,10 @@ export async function getCalendarVisits() {
       agencyId: true,
       timeIn: true,
       timeOut: true,
+      therapyOrders: true,
+      treatmentApproved: true,
+      treatmentApprovedDate: true,
+      documents: true,
     },
     orderBy: { visitDate: "desc" },
   });
@@ -50,21 +54,33 @@ export async function getCalendarVisits() {
     for (const a of agencies) agencyMap[a.id] = a.name;
   }
 
-  return visits.map((v) => ({
-    id: v.id,
-    patient_id: v.patientId,
-    patient_name: v.patientName,
-    therapist_id: v.therapistId,
-    therapist_name: v.therapistName,
-    visit_date: v.visitDate?.toISOString?.().split("T")[0],
-    therapy_type: THERAPY_DISPLAY[v.therapyType] || v.therapyType,
-    visit_type: VISIT_TYPE_DISPLAY[v.visitType] || v.visitType?.toLowerCase() || null,
-    status: v.status?.toLowerCase(),
-    duration_minutes: v.durationMinutes,
-    agency: agencyMap[v.agencyId] || null,
-    time_in: v.timeIn,
-    time_out: v.timeOut,
-  }));
+  return visits.map((v) => {
+    const documents = v.documents && typeof v.documents === "object" && !Array.isArray(v.documents)
+      ? v.documents
+      : {};
+    const snapshot = documents.formSnapshot && typeof documents.formSnapshot === "object"
+      ? documents.formSnapshot
+      : {};
+    return {
+      id: v.id,
+      patient_id: v.patientId,
+      patient_name: v.patientName,
+      therapist_id: v.therapistId,
+      therapist_name: v.therapistName,
+      visit_date: v.visitDate?.toISOString?.().split("T")[0],
+      therapy_type: THERAPY_DISPLAY[v.therapyType] || v.therapyType,
+      visit_type: VISIT_TYPE_DISPLAY[v.visitType] || v.visitType?.toLowerCase() || null,
+      status: v.status?.toLowerCase(),
+      duration_minutes: v.durationMinutes,
+      agency: agencyMap[v.agencyId] || null,
+      time_in: v.timeIn,
+      time_out: v.timeOut,
+      therapy_orders: snapshot.therapy_orders ?? v.therapyOrders ?? null,
+      treatment_approved: v.treatmentApproved,
+      treatment_approved_date: v.treatmentApprovedDate?.toISOString?.() || null,
+      create_update_orders: snapshot.create_update_orders ?? null,
+    };
+  });
 }
 
 export async function getTherapistsForSchedule() {
@@ -76,6 +92,7 @@ export async function getTherapistsForSchedule() {
       fullName: true,
       email: true,
       discipline: true,
+      credentials: true,
       status: true,
     },
     orderBy: { fullName: "asc" },
@@ -86,6 +103,7 @@ export async function getTherapistsForSchedule() {
     full_name: t.fullName,
     email: t.email,
     discipline: THERAPY_DISPLAY[t.discipline] || t.discipline,
+    credentials: t.credentials,
     status: t.status?.toLowerCase(),
   }));
 }

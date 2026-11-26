@@ -11,8 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ClipboardList, Check, X, Calendar, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { updateAssignment } from "@/lib/api-client/referrals";
-import { saveVisitNote } from "@/lib/api-client/visit-notes";
+import { scheduleAssignment, updateAssignment } from "@/lib/api-client/referrals";
 
 const therapyColors = {
   "Physical Therapy": "bg-teal-100 text-teal-700",
@@ -126,8 +125,15 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
     if (!schedule) {
       const patient = getPatient(assignment.patient_id);
       const today = new Date().toISOString().split("T")[0];
-      const minDate = patient?.cert_period_start || today;
-      setSingleDate(minDate > today ? minDate : today);
+      const minDate = formatDateOnly(patient?.cert_period_start);
+      const maxDate = formatDateOnly(patient?.cert_period_end);
+      // Always open the picker on a valid certification-period date. A past
+      // certification period previously defaulted to today, guaranteeing a
+      // server-side "outside certification period" error.
+      let initialDate = today;
+      if (minDate && initialDate < minDate) initialDate = minDate;
+      if (maxDate && initialDate > maxDate) initialDate = minDate || maxDate;
+      setSingleDate(initialDate);
     }
     setScheduleDialog(assignment);
   };
@@ -144,6 +150,15 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
   const allScheduledDates = weekSchedule ? weekSchedule.flatMap((w) => w.dates) : [singleDate];
   const outside48h = scheduleDialog ? isOutside48h(allScheduledDates, scheduleDialog.created_at) : false;
   const totalScheduledVisits = weekSchedule ? weekSchedule.reduce((s, w) => s + w.approved_visits, 0) : 1;
+  const schedulePatient = scheduleDialog
+    ? patients.find((patient) => patient.id === scheduleDialog.patient_id)
+    : null;
+  const certMinDate = formatDateOnly(schedulePatient?.cert_period_start);
+  const certMaxDate = formatDateOnly(schedulePatient?.cert_period_end);
+  const singleDateOutsideCert = !weekSchedule && !!singleDate && (
+    (certMinDate && singleDate < certMinDate) ||
+    (certMaxDate && singleDate > certMaxDate)
+  );
 
   const handleSchedule = async () => {
     if (!scheduleDialog) return;
@@ -170,41 +185,31 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
           }
         }
         const allDates = weekSchedule.flatMap(w => w.dates);
-        for (const date of allDates) {
-          await saveVisitNote({
-            patient_id: scheduleDialog.patient_id,
-            patient_name: scheduleDialog.patient_name,
-            therapist_id: scheduleDialog.therapist_id || therapistId,
-            therapist_name: scheduleDialog.therapist_name || user?.full_name,
-            therapy_type: scheduleDialog.therapy_type,
-            visit_type: "treatment",
-            visit_date: date,
-            status: "scheduled",
-            agency: scheduleDialog.agency,
-          });
-        }
-        await updateAssignment(scheduleDialog.id, { status: "scheduled" });
+        await scheduleAssignment(scheduleDialog.id, {
+          dates: allDates.map((date) => ({ date, visit_type: "treatment" })),
+          delay_reason: delayReason.trim() || undefined,
+        });
       } else {
         if (!singleDate) { setSubmitting(false); return; }
-        await saveVisitNote({
-          patient_id: scheduleDialog.patient_id,
-          patient_name: scheduleDialog.patient_name,
-          therapist_id: scheduleDialog.therapist_id || therapistId,
-          therapist_name: scheduleDialog.therapist_name || user?.full_name,
-          therapy_type: scheduleDialog.therapy_type,
-          visit_type: scheduleDialog.visit_type || "evaluation",
-          visit_date: singleDate,
-          status: "scheduled",
-          agency: scheduleDialog.agency,
+        if (singleDateOutsideCert) {
+          toast.error(`Choose a date from ${certMinDate} to ${certMaxDate}`);
+          setSubmitting(false);
+          return;
+        }
+        await scheduleAssignment(scheduleDialog.id, {
+          dates: [{
+            date: singleDate,
+            visit_type: scheduleDialog.visit_type || "evaluation",
+          }],
+          delay_reason: delayReason.trim() || undefined,
         });
-        await updateAssignment(scheduleDialog.id, { status: "scheduled" });
       }
       toast.success(weekSchedule ? "Visits scheduled successfully" : "Evaluation scheduled and added to My Schedule");
       onRefresh?.();
       setScheduleDialog(null);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to schedule visits");
+      toast.error(err instanceof Error ? err.message : "Failed to schedule visits");
     } finally {
       setSubmitting(false);
     }
@@ -500,13 +505,29 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
                   <Label className="text-sm font-medium text-slate-700 mb-2 block">Visit Date</Label>
                   {(() => {
                     const patient = getPatient(scheduleDialog.patient_id);
-                    const minDate = patient?.cert_period_start;
-                    const maxDate = patient?.cert_period_end;
+                    const minDate = formatDateOnly(patient?.cert_period_start);
+                    const maxDate = formatDateOnly(patient?.cert_period_end);
                     return (
                       <>
-                        <Input type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} min={minDate} max={maxDate} />
+                        <Input
+                          type="date"
+                          value={singleDate}
+                          onChange={(e) => setSingleDate(e.target.value)}
+                          min={minDate || undefined}
+                          max={maxDate || undefined}
+                          className={singleDateOutsideCert
+                            ? "border-red-400 bg-red-50"
+                            : "border-emerald-400 bg-emerald-50/60 focus-visible:ring-emerald-400"}
+                        />
                         {minDate && maxDate && (
-                          <p className="text-xs text-slate-500 mt-1">Auth period: {minDate} → {maxDate}</p>
+                          <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                            <p className="text-xs font-medium text-emerald-800">
+                              Available dates: {minDate} to {maxDate}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-emerald-700">
+                              Dates outside this certification period are disabled.
+                            </p>
+                          </div>
                         )}
                       </>
                     );
@@ -516,7 +537,7 @@ export default function AwaitingAcceptance({ assignments, user, therapistId, pat
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setScheduleDialog(null)}>Cancel</Button>
-              <Button onClick={handleSchedule} disabled={submitting} className="bg-green-600 hover:bg-green-700 gap-2">
+              <Button onClick={handleSchedule} disabled={submitting || singleDateOutsideCert} className="bg-green-600 hover:bg-green-700 gap-2">
                 <Calendar className="w-4 h-4" />
                 {submitting ? "Scheduling..." : `Schedule ${totalScheduledVisits} Visit${totalScheduledVisits !== 1 ? "s" : ""}`}
               </Button>

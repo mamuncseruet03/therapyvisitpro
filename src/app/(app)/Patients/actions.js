@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { requireAuth, requireRole } from "@/lib/auth/session";
+import { verifyPassword } from "@/lib/auth/password";
+import { executePatientDeletion } from "@/lib/patients/delete-record";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
@@ -376,15 +378,15 @@ export async function updatePatient(id, data) {
   return { success: true };
 }
 
-export async function deletePatient(id) {
+export async function deletePatient(id, password, reason) {
   const user = await requireRole("SUPERUSER", "ADMIN");
 
-  const patient = await prisma.patient.findUnique({
-    where: { id },
-    select: { firstName: true, lastName: true },
-  });
-
-  await prisma.patient.delete({ where: { id } });
+  if (typeof reason !== "string" || !reason.trim()) return { error: "A deletion reason is required" };
+  const account = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
+  if (typeof password !== "string" || !account?.passwordHash || !await verifyPassword(password, account.passwordHash)) {
+    return { error: "Incorrect password" };
+  }
+  const patient = await prisma.$transaction((tx) => executePatientDeletion(tx, id));
 
   const h = await headers();
   await logAudit({
@@ -393,9 +395,36 @@ export async function deletePatient(id) {
     resourceType: "Patient",
     resourceId: id,
     resourceLabel: patient ? `${patient.firstName} ${patient.lastName}` : id,
-    details: "Deleted patient record",
+    details: `Deleted patient record. Reason: ${reason.trim()}`,
     ipAddress: getClientIp(h),
   });
 
   return { success: true };
+}
+
+export async function submitPatientDeletionRequest(id, reason) {
+  const user = await requireRole("THERAPIST");
+  if (typeof reason !== "string" || !reason.trim() || reason.length > 2000) return { error: "Enter a reason of up to 2000 characters" };
+  if (!user.therapistId) return { error: "A linked therapist profile is required" };
+  return prisma.$transaction(async (tx) => {
+    const patient = await tx.patient.findFirst({
+      where: { id, OR: [
+        { assignments: { some: { therapistId: user.therapistId, status: { in: ["ACCEPTED", "SCHEDULED"] } } } },
+        { visitNotes: { some: { therapistId: user.therapistId } } },
+      ] },
+      select: { firstName: true, lastName: true, _count: { select: { visitNotes: true } } },
+    });
+    if (!patient) return { error: "Patient is not assigned to you" };
+    const pending = await tx.deletionRequest.findFirst({ where: { patientId: id, requestedBy: user.email, status: "PENDING" } });
+    if (pending) return { error: "You already submitted a request for this patient" };
+    await tx.deletionRequest.create({ data: {
+      patientId: id,
+      patientName: `${patient.firstName} ${patient.lastName}`,
+      requestedBy: user.email,
+      requestedByName: user.name,
+      reason: reason.trim(),
+      visitNotesCount: patient._count.visitNotes,
+    } });
+    return { success: true };
+  });
 }

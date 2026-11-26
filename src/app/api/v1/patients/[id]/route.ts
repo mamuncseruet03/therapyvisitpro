@@ -32,12 +32,14 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const result = await deletePatient(id);
+    const { password, reason } = await request.json().catch(() => ({}));
+    const result = await deletePatient(id, password, reason);
+    if (result.error) return apiError(result.error, 400);
     return apiSuccess(result);
   } catch (err) {
     return handleApiError(err);

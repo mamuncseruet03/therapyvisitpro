@@ -11,6 +11,7 @@ export async function PATCH(
     const { field, value } = await request.json();
     if (!field) return apiError("field is required", 400);
     const result = await updateVisitNoteField(id, field, value);
+    if (result.error) return apiError(result.error);
     return apiSuccess(result);
   } catch (err) {
     return handleApiError(err);

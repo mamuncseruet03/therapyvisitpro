@@ -185,29 +185,56 @@ export async function deleteTask(id) {
 export async function getUsersForSelect() {
   await requireAuth();
 
-  const users = await prisma.user.findMany({
-    where: {
-      email: {
-        in: [
-          "compliance1@aaahealthgroup.com",
-          "ameya@aaahealthgroup.com",
-          "intake2@aaahealthgroup.com",
-          "rehab@aaahealthgroup.com",
-          "adorsatwar@apexrehabgroup.com",
-          "dorsatwar.ameya@gmail.com",
-        ],
+  const [users, therapists] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        userType: { in: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"] },
       },
-    },
-    select: { id: true, email: true, fullName: true, userType: true, role: true, therapistId: true },
-    orderBy: { fullName: "asc" },
-  });
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        userType: true,
+        role: true,
+        therapistId: true,
+        credentials: true,
+        discipline: true,
+        therapist: { select: { fullName: true } },
+      },
+      orderBy: [{ fullName: "asc" }, { email: "asc" }],
+    }),
+    prisma.therapist.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, fullName: true, email: true, credentials: true, discipline: true },
+      orderBy: { fullName: "asc" },
+    }),
+  ]);
 
-  return users.map(u => ({
+  const linkedTherapistIds = new Set(users.map((user) => user.therapistId).filter(Boolean));
+  const userOptions = users.map(u => ({
     id: u.id,
     email: u.email,
-    full_name: u.fullName,
+    full_name: u.fullName || u.therapist?.fullName || u.email,
     user_type: u.userType?.toLowerCase(),
     role: u.role?.toLowerCase(),
     therapist_id: u.therapistId,
+    credentials: u.credentials,
+    discipline: u.discipline,
   }));
+  const therapistOptions = therapists
+    .filter((therapist) => !linkedTherapistIds.has(therapist.id))
+    .map((therapist) => ({
+      id: `therapist:${therapist.id}`,
+      email: therapist.email || null,
+      full_name: therapist.fullName,
+      user_type: "therapist",
+      role: "user",
+      therapist_id: therapist.id,
+      credentials: therapist.credentials,
+      discipline: therapist.discipline,
+    }));
+
+  return [...userOptions, ...therapistOptions].sort((a, b) =>
+    String(a.full_name || a.email || "").localeCompare(String(b.full_name || b.email || "")),
+  );
 }

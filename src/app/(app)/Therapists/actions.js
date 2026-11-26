@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeServiceArea } from "@/lib/geo/service-area";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
@@ -32,6 +33,11 @@ function toValidationInput(data) {
     status: data.status ? upper(data.status) : undefined,
     facilities: optional(data.facilities),
   };
+}
+
+function normalizeProfileFiles(files) {
+  if (!files?.service_area) return files;
+  return { ...files, service_area: normalizeServiceArea(files.service_area) };
 }
 
 function toSnakeCase(t) {
@@ -103,7 +109,7 @@ export async function createTherapist(data) {
       status: v.status || "ACTIVE",
       facilities: v.facilities || [],
       rates: data.rates || null,
-      personalFiles: data.personal_files || null,
+      personalFiles: normalizeProfileFiles(data.personal_files) || null,
       disciplinaryActions: data.disciplinary_actions || null,
     },
   });
@@ -146,7 +152,7 @@ export async function updateTherapist(id, data) {
   if (v.status !== undefined) updateData.status = v.status;
   if (v.facilities !== undefined) updateData.facilities = v.facilities;
   if (data.rates !== undefined) updateData.rates = data.rates;
-  if (data.personal_files !== undefined) updateData.personalFiles = data.personal_files;
+  if (data.personal_files !== undefined) updateData.personalFiles = normalizeProfileFiles(data.personal_files);
   if (data.disciplinary_actions !== undefined) updateData.disciplinaryActions = data.disciplinary_actions;
 
   await prisma.therapist.update({ where: { id }, data: updateData });

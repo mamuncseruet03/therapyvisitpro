@@ -9,7 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function DeletePatientDialog({ patient, onClose, currentUser }) {
+import { deletePatient } from "@/lib/api-client/patients";
+import { submitPatientDeletionRequest } from "@/app/(app)/Patients/actions";
+
+export default function DeletePatientDialog({ patient, onClose, currentUser, onDeleted }) {
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,10 +35,15 @@ export default function DeletePatientDialog({ patient, onClose, currentUser }) {
         }
       }
 
-      toast.success("Deletion request submitted. An admin will review it under Orders → Medical Record Deletions.");
+      const result = isAdmin
+        ? await deletePatient(patient.id, password, reason)
+        : await submitPatientDeletionRequest(patient.id, reason);
+      if (result?.error) throw new Error(result.error);
+      if (isAdmin) onDeleted?.();
+      toast.success(isAdmin ? "Patient deleted" : "Deletion request submitted for admin review.");
       onClose();
     } catch (err) {
-      toast.error("Failed to submit deletion request.");
+      toast.error(err.message || "Failed to process deletion.");
     } finally {
       setLoading(false);
     }
@@ -47,7 +55,7 @@ export default function DeletePatientDialog({ patient, onClose, currentUser }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-600">
             <AlertTriangle className="w-5 h-5" />
-            Request Patient Record Deletion
+            {isAdmin ? "Permanently Delete Patient" : "Request Patient Record Deletion"}
           </DialogTitle>
         </DialogHeader>
 
@@ -96,7 +104,7 @@ export default function DeletePatientDialog({ patient, onClose, currentUser }) {
             className="bg-red-600 hover:bg-red-700 text-white gap-2"
           >
             <Trash2 className="w-4 h-4" />
-            {loading ? "Submitting..." : "Submit Deletion Request"}
+            {loading ? "Submitting..." : isAdmin ? "Confirm Permanent Deletion" : "Submit Deletion Request"}
           </Button>
         </DialogFooter>
       </DialogContent>

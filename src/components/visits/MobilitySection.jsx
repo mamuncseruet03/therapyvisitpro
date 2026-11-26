@@ -94,7 +94,6 @@ export default function MobilitySection({ form, set, isOT = false }) {
                 <Input type="number" placeholder="e.g. 150" value={form.ambulation_distance || ""} onChange={(e) => set("ambulation_distance", e.target.value)} className="h-8 text-xs" />
               </div>
             </div>
-
             {/* Weight Bearing */}
             <div className="bg-slate-50 border rounded-lg p-3 mb-3">
               <Label className="text-blue-700 font-semibold block mb-2">Weight Bearing</Label>
@@ -127,6 +126,9 @@ export default function MobilitySection({ form, set, isOT = false }) {
               <Label className="text-xs text-slate-600 mb-1 block">Ambulation Notes</Label>
               <Textarea placeholder="Gait deviations, endurance, safety observations..." value={form.ambulation_notes || ""} onChange={(e) => set("ambulation_notes", e.target.value)} rows={2} />
             </div>
+            <div className="mt-3"><Label className="text-xs text-slate-600 mb-2 block">Ambulation Surfaces</Label><div className="flex flex-wrap gap-4">{["Level", "Uneven", "Stairs"].map((item) => <label key={item} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form.ambulation_surfaces || []).includes(item)} onChange={(e) => { const current = form.ambulation_surfaces || []; set("ambulation_surfaces", e.target.checked ? [...current, item] : current.filter((value) => value !== item)); }} />{item}</label>)}</div></div>
+            <div className="mt-3"><Label className="text-xs text-slate-600 mb-2 block">Gait Deviations</Label><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{["L/R Antalgic", "L/R Trendelenburg", "L/R Flat Foot", "L/R Foot Drop", "L/R Short Stride", "Decreased Circumduction", "Wide/Narrow Base", "Shuffling Gait", "Festinating/Spastic", "Hip Hiking", "Scissored/Ataxic", "Arm Swing Diminished", "Improper Use of Assistive Device", "L/R Genu Recurvatum"].map((item) => <label key={item} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={(form.gait_deviations || []).includes(item)} onChange={(e) => { const current = form.gait_deviations || []; set("gait_deviations", e.target.checked ? [...current, item] : current.filter((value) => value !== item)); }} />{item}</label>)}</div></div>
+            {isOT && <div className="mt-4 rounded-lg border bg-slate-50 p-3"><Label className="text-blue-700 font-semibold block mb-2">Wheelchair Management</Label><div className="grid gap-2 sm:grid-cols-2">{["Level Surface", "Uneven Surface", "Management Brakes / Arms / Leg Rests"].map((item) => <label key={item} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form.wheelchair_management || []).includes(item)} onChange={(e) => { const current = form.wheelchair_management || []; set("wheelchair_management", e.target.checked ? [...current, item] : current.filter((value) => value !== item)); }} />{item}</label>)}</div></div>}
           </div>
 
           {/* Balance */}

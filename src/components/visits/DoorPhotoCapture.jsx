@@ -9,22 +9,26 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
   const [mode, setMode] = useState("idle");
   const [capturedImage, setCapturedImage] = useState(null);
   const [error, setError] = useState(null);
+  const [frameReady, setFrameReady] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
 
   const startCamera = async () => {
     setError(null);
+    setFrameReady(false);
     setMode("camera");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      if (!videoRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
       }
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
     } catch (err) {
       setError("Camera access denied. Please allow camera permissions and try again.");
       setMode("idle");
@@ -41,14 +45,19 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
   const capturePhoto = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    setCapturedImage(dataUrl);
-    stopCamera();
-    setMode("preview");
+    if (!video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+    try {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      setCapturedImage(canvas.toDataURL("image/jpeg", 0.85));
+      stopCamera();
+      setMode("preview");
+    } catch {
+      stopCamera();
+      setError("Could not capture the photo. Open the camera to retake it.");
+      setMode("idle");
+    }
   };
 
   const retake = () => {
@@ -57,6 +66,7 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
   };
 
   const confirmPhoto = async () => {
+    setError(null);
     setMode("uploading");
     try {
       const blob = await (await fetch(capturedImage)).blob();
@@ -65,13 +75,12 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
       formData.append("file", file);
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
-      if (data.url) {
-        onPhotoSaved(data.url);
-      } else {
-        onPhotoSaved(capturedImage || "#");
-      }
+      if (!res.ok || !data.url) throw new Error("Photo upload failed");
+      onPhotoSaved(data.url);
     } catch {
-      onPhotoSaved(capturedImage || "#");
+      setError("Could not upload the photo. Try again or retake it.");
+      setMode("preview");
+      return;
     }
     setCapturedImage(null);
     setMode("idle");
@@ -95,6 +104,7 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
         <p className="text-xs text-slate-500">Take a live photo of the patient&apos;s door to verify the visit location</p>
       </CardHeader>
       <CardContent>
+        {error && <p role="alert" className="mb-2 text-sm text-red-500">{error}</p>}
         {/* Existing photo */}
         {photoUrl && mode === "idle" && (
           <div className="space-y-3">
@@ -128,7 +138,6 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
         {/* No photo yet */}
         {!photoUrl && mode === "idle" && (
           <div className="space-y-2">
-            {error && <p className="text-sm text-red-500">{error}</p>}
             <Button
               type="button"
               onClick={startCamera}
@@ -146,6 +155,7 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
             <div className="relative rounded-lg overflow-hidden bg-black border border-slate-200">
               <video
                 ref={videoRef}
+                onLoadedData={(event) => setFrameReady(event.currentTarget.videoWidth > 0)}
                 autoPlay
                 playsInline
                 muted
@@ -163,6 +173,8 @@ export default function DoorPhotoCapture({ photoUrl, onPhotoSaved, onRemove }) {
                 <button
                   type="button"
                   onClick={capturePhoto}
+                  disabled={!frameReady}
+                  aria-label="Capture door photo"
                   className="w-14 h-14 rounded-full bg-white border-4 border-white/70 shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
                 >
                   <div className="w-10 h-10 rounded-full bg-white border-2 border-slate-300" />

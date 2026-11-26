@@ -21,6 +21,10 @@ const INTERVENTION_OPTIONS = [
   "Modalities for Pain Control", "Home Safety Training", "Stair / Step Training",
 ];
 
+const OT_INTERVENTION_OPTIONS = [
+  "Adaptive Equipment Training", "ADL Training", "Balance Training", "Bed Mobility", "Cognitive Retraining", "Edema Management", "Energy Conservation Training", "Functional Activities", "Home Exercise Program", "Home Modification", "Home Safety Evaluation", "IADL Training", "Joint Protection", "Muscle Re-Education", "Neuromuscular Re-Education", "Orthotics / Splinting", "Pain Management", "Patient / Family / Caregiver Training", "Safety Training", "Therapeutic Activities", "Therapeutic Exercises", "Visual Perception Re-Education", "Sensory Treatment", "Transfer Techniques", "Work Simplification Training", "Written Instructions", "TENS", "Establish / Upgrade HEP", "Patient Education", "O2 Saturation Monitor", "Modalities for Pain Control", "Home Safety Training", "Stair / Step Training",
+];
+
 export default function GoalsPlanTab({ form, set, selectedPatient }) {
   return (
     <div className="space-y-6">
@@ -33,6 +37,11 @@ export default function GoalsPlanTab({ form, set, selectedPatient }) {
             const updateGoalEntry = (field, value) => { const updated = [...(form.eval_treatment_goals || [])]; updated[goalIdx] = { ...updated[goalIdx], [field]: value }; set("eval_treatment_goals", updated); };
             const selectedInterventions = goalEntry.interventions || [];
             const toggleIntervention = (opt) => { const next = selectedInterventions.includes(opt) ? selectedInterventions.filter(i => i !== opt) : [...selectedInterventions, opt]; updateGoalEntry("interventions", next); };
+            const interventionOptions = form.therapy_type === "Occupational Therapy"
+              ? OT_INTERVENTION_OPTIONS
+              : form.therapy_type === "Speech Therapy"
+                ? [...INTERVENTION_OPTIONS, "Other"]
+                : INTERVENTION_OPTIONS;
             const isOpen = goalEntry.interventions_open !== false;
             return (
               <div key={goalIdx} className="border rounded-lg bg-white">
@@ -51,7 +60,20 @@ export default function GoalsPlanTab({ form, set, selectedPatient }) {
                     <button type="button" onClick={() => updateGoalEntry("interventions_open", !isOpen)} className="flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800"><span className="text-base leading-none">{isOpen ? "▲" : "▼"}</span> Interventions</button>
                     {isOpen && (
                       <div className="mt-2 space-y-1">
-                        {INTERVENTION_OPTIONS.map((opt) => (<label key={opt} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={selectedInterventions.includes(opt)} onChange={() => toggleIntervention(opt)} className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600 cursor-pointer" /><span className={`text-xs ${selectedInterventions.includes(opt) ? "text-teal-700 font-medium" : "text-slate-700"}`}>{opt}</span></label>))}
+                        {interventionOptions.map((opt) => (<label key={opt} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={selectedInterventions.includes(opt)} onChange={() => toggleIntervention(opt)} className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600 cursor-pointer" /><span className={`text-xs ${selectedInterventions.includes(opt) ? "text-teal-700 font-medium" : "text-slate-700"}`}>{opt}</span></label>))}
+                        {form.therapy_type === "Speech Therapy" && selectedInterventions.includes("Other") && (
+                          <div className="ml-5 pt-1">
+                            <Label className="text-xs text-slate-600">Other Intervention</Label>
+                            <Input
+                              value={goalEntry.intervention_other || ""}
+                              onChange={(e) => updateGoalEntry("intervention_other", e.target.value)}
+                              placeholder="Specify other intervention"
+                              maxLength={300}
+                              className="mt-1 h-8 text-sm"
+                            />
+                            <p className="mt-1 text-right text-[11px] text-slate-400">{(goalEntry.intervention_other || "").length} of 300</p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -127,6 +149,9 @@ export default function GoalsPlanTab({ form, set, selectedPatient }) {
         <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-slate-800">Need for Skilled Services <span className="text-red-500 text-sm">★</span></CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div><Label className="text-blue-700 font-semibold">Skilled Service Narrative <span className="text-red-500">★</span></Label><DictationTextarea maxLength={1024} placeholder="Describe the need for skilled services..." value={form.plan || ""} onChange={(e) => set("plan", e.target.value)} rows={4} /></div>
+          <div><Label className="text-blue-700 font-semibold">Precipitating Events</Label><DictationTextarea value={form.precipitating_events || ""} onChange={(e) => set("precipitating_events", e.target.value)} rows={3} /></div>
+          <div><Label className="text-blue-700 font-semibold">New Clinical Changes</Label><DictationTextarea value={form.new_clinical_changes || ""} onChange={(e) => set("new_clinical_changes", e.target.value)} rows={3} /></div>
+          <div><Label className="text-blue-700 font-semibold">Why Skilled Therapy Is Needed Now</Label><DictationTextarea value={form.why_skilled_therapy_needed_now || ""} onChange={(e) => set("why_skilled_therapy_needed_now", e.target.value)} rows={3} /></div>
           <div>
             <Label className="text-blue-700 font-semibold mb-2 block">Other Skilled Service Recommendations</Label>
             <div className="space-y-2">

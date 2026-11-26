@@ -84,7 +84,20 @@ export async function PATCH(request: NextRequest) {
     if (data.credentials !== undefined) updateData.credentials = data.credentials || null;
     if (data.license_number !== undefined) updateData.licenseNumber = data.license_number || null;
     if (data.phone !== undefined) updateData.phone = data.phone || null;
-    if (data.personal_files !== undefined) updateData.personalFiles = data.personal_files;
+    if (data.personal_files && typeof data.personal_files === "object" && !Array.isArray(data.personal_files)) {
+      const { license_settings: _licenseSettings, service_area: _serviceArea, ...files } = data.personal_files;
+      const therapist = await prisma.therapist.findUniqueOrThrow({
+        where: { id: therapistId },
+        select: { personalFiles: true },
+      });
+      const currentFiles = therapist.personalFiles;
+      if (currentFiles && typeof currentFiles === "object" && !Array.isArray(currentFiles)) {
+        for (const key of ["license_settings", "service_area"]) {
+          if (currentFiles[key] !== undefined) files[key] = currentFiles[key];
+        }
+      }
+      updateData.personalFiles = files;
+    }
 
     await prisma.therapist.update({ where: { id: therapistId }, data: updateData });
     return apiSuccess({ success: true, id: therapistId });

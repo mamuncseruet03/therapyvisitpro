@@ -16,6 +16,7 @@ export default function ObjectiveTab({ form, set }) {
       <Card className="border-l-4 border-l-orange-500">
         <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-slate-800">Objective</CardTitle></CardHeader>
         <CardContent className="space-y-6">
+          <div><Label className="text-blue-700 font-semibold mb-3 block">Mental Status</Label><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{["Alert", "Forgetful", "Able to follow simple commands", "Able to follow complex commands", "HOH (hand over hand)", "Vision Issues", "Oriented: Person", "Oriented: Place", "Oriented: Time"].map((item) => <label key={item} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form.mental_status || []).includes(item)} onChange={(e) => { const current = form.mental_status || []; set("mental_status", e.target.checked ? [...current, item] : current.filter((value) => value !== item)); }} />{item}</label>)}</div></div>
           <div><Label className="text-blue-700 font-semibold mb-3 block">ROM Evaluation</Label><ROMEvaluationSection romEvaluation={form.rom_evaluation || {}} onChange={(v) => set("rom_evaluation", v)} /></div>
           <div className="border-t pt-4"><Label className="text-blue-700 font-semibold mb-3 block">Strength Evaluation</Label><StrengthEvaluationSection strengthEvaluation={form.strength_evaluation || {}} onChange={(v) => set("strength_evaluation", v)} /></div>
           <div className="border-t pt-4">

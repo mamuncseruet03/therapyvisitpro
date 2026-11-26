@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity } from "lucide-react";
+import Link from "next/link";
 
 export function LoginForm() {
   const [error, setError] = useState(null);
@@ -22,7 +23,7 @@ export function LoginForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: formData.get("email"),
+          email: String(formData.get("email") || "").trim().toLowerCase(),
           password: formData.get("password"),
         }),
       });
@@ -73,9 +74,12 @@ export function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-sm text-slate-700">
-              Password
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-sm text-slate-700">Password</Label>
+              <Link href="/forgot-password" className="text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               name="password"

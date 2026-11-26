@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, Undo2, Trash2 } from "lucide-react";
+import { CalendarDays, Clock, Undo2, Trash2 } from "lucide-react";
+import { format } from "date-fns";
 import { updateAssignment, deleteAssignment as deleteAssignmentAction } from "@/lib/api-client/referrals";
 import { toast } from "sonner";
 
@@ -111,6 +112,12 @@ export default function AdminAwaitingAcceptance({ assignments, onRefresh, onTake
                       }
                       {assignment.agency && ` • ${assignment.agency}`}
                     </div>
+                    {assignment.assigned_at && (
+                      <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                        <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+                        <span>Assigned: {format(new Date(assignment.assigned_at), "MMM d, yyyy")}</span>
+                      </div>
+                    )}
                     {assignment.declined_reason && (
                       <div className="text-xs text-red-500 mt-1">
                         Declined: &quot;{assignment.declined_reason}&quot;

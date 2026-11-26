@@ -28,8 +28,8 @@ export async function updatePatient(id: string, data: unknown) {
   return handleResponse(res);
 }
 
-export async function deletePatient(id: string) {
-  const res = await fetch(apiUrl(`/api/v1/patients/${id}`), { method: "DELETE" });
+export async function deletePatient(id: string, password: string, reason: string) {
+  const res = await fetch(apiUrl(`/api/v1/patients/${id}`), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password, reason }) });
   return handleResponse(res);
 }
 

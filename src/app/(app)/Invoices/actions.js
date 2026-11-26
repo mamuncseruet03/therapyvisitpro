@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
+import { findPayerRules } from "@/lib/payer-rules";
 
 const THERAPY_DISPLAY = {
   PHYSICAL_THERAPY: "Physical Therapy",
@@ -22,6 +23,17 @@ const VISIT_TYPE_DISPLAY = {
   EVAL_REFUSED: "eval_refused",
   MISSED_VISIT: "missed_visit",
 };
+
+function payerRateForVisit(visit, rules) {
+  const discipline = { PHYSICAL_THERAPY: "PT", OCCUPATIONAL_THERAPY: "OT", SPEECH_THERAPY: "ST" }[visit.therapyType];
+  const type = visit.visitType?.startsWith("DISCHARGE") ? "discharge" : visit.visitType?.toLowerCase();
+  return rules?.specialRates?.[`${discipline}:${type}`] ?? null;
+}
+
+async function loadPayerRulesForVisits(visits) {
+  const names = [...new Set(visits.map((visit) => visit.patient?.insurance).filter(Boolean))];
+  return new Map(await Promise.all(names.map(async (name) => [name, await findPayerRules(name)])));
+}
 
 export async function getInvoices() {
   await requireRole("SUPERUSER", "ADMIN");
@@ -92,7 +104,7 @@ export async function getAgenciesForInvoice() {
 }
 
 export async function getCompletedVisitsForInvoice() {
-  await requireAuth();
+  await requireRole("SUPERUSER", "ADMIN");
 
   const visits = await prisma.visitNote.findMany({
     where: {
@@ -109,10 +121,12 @@ export async function getCompletedVisitsForInvoice() {
       agencyId: true,
       specialPrice: true,
       nonBillable: true,
+      patient: { select: { insurance: true } },
     },
     orderBy: { visitDate: "desc" },
   });
 
+  const rules = await loadPayerRulesForVisits(visits);
   return visits
     .filter((v) => !v.nonBillable)
     .map((v) => ({
@@ -125,6 +139,7 @@ export async function getCompletedVisitsForInvoice() {
       status: v.status?.toLowerCase(),
       agency_id: v.agencyId,
       special_price: v.specialPrice ? Number(v.specialPrice) : null,
+      payer_rate: payerRateForVisit(v, rules.get(v.patient?.insurance)),
     }));
 }
 
@@ -137,13 +152,27 @@ function generateInvoiceNumber() {
   return `INV-${y}${m}${d}-${rand}`;
 }
 
+async function applyPayerRates(agencyId, requestedItems) {
+  const visits = await prisma.visitNote.findMany({
+    where: { id: { in: requestedItems.map((item) => item.visit_note_id) }, agencyId },
+    select: { id: true, therapyType: true, visitType: true, patient: { select: { insurance: true } } },
+  });
+  const visitById = new Map(visits.map((visit) => [visit.id, visit]));
+  const rulesByPayer = await loadPayerRulesForVisits(visits);
+  return requestedItems.map((item) => {
+    const visit = visitById.get(item.visit_note_id);
+    if (!visit) throw new Error("Invoice visit does not belong to the selected agency");
+    const override = payerRateForVisit(visit, rulesByPayer.get(visit.patient?.insurance));
+    return override == null ? item : { ...item, rate: override, subtotal: Math.round(override * (item.quantity || 1) * 100) / 100 };
+  });
+}
+
 export async function createInvoice(data) {
   const user = await requireRole("SUPERUSER", "ADMIN");
-
   const agency = await prisma.agency.findUnique({ where: { id: data.agency_id } });
   if (!agency) throw new Error("Agency not found");
-
   const invoiceNumber = data.invoice_number || generateInvoiceNumber();
+  const lineItems = await applyPayerRates(agency.id, data.line_items || []);
 
   const invoice = await prisma.invoice.create({
     data: {
@@ -152,11 +181,11 @@ export async function createInvoice(data) {
       agencyName: agency.name,
       dateFrom: new Date(data.date_from),
       dateTo: new Date(data.date_to),
-      totalAmount: data.total_amount,
+      totalAmount: lineItems.length ? Math.round(lineItems.reduce((sum, item) => sum + Number(item.subtotal ?? item.rate), 0) * 100) / 100 : data.total_amount,
       status: (data.status || "draft").toUpperCase(),
       notes: data.notes || null,
       lineItems: {
-        create: (data.line_items || []).map((li) => ({
+        create: lineItems.map((li) => ({
           visitNoteId: li.visit_note_id,
           patientName: li.patient_name,
           visitDate: new Date(li.visit_date),
@@ -165,7 +194,7 @@ export async function createInvoice(data) {
           therapistName: li.therapist_name,
           rate: li.rate,
           quantity: li.quantity || 1,
-          subtotal: li.subtotal || li.rate,
+          subtotal: li.subtotal ?? li.rate,
         })),
       },
     },
@@ -178,7 +207,7 @@ export async function createInvoice(data) {
     resourceType: "Invoice",
     resourceId: invoice.id,
     resourceLabel: invoiceNumber,
-    details: `Invoice created for ${agency.name} ($${data.total_amount})`,
+    details: `Invoice created for ${agency.name} ($${Number(invoice.totalAmount).toFixed(2)})`,
     ipAddress: getClientIp(h),
   });
 
@@ -204,10 +233,13 @@ export async function updateInvoice(id, data) {
   }
 
   if (data.line_items !== undefined) {
-    await prisma.invoiceLineItem.deleteMany({ where: { invoiceId: id } });
-    await prisma.invoiceLineItem.createMany({
-      data: data.line_items.map((li) => ({
-        invoiceId: id,
+    const invoice = await prisma.invoice.findUnique({ where: { id }, select: { agencyId: true } });
+    if (!invoice) throw new Error("Invoice not found");
+    const lineItems = await applyPayerRates(invoice.agencyId, data.line_items);
+    updateData.totalAmount = Math.round(lineItems.reduce((sum, item) => sum + Number(item.subtotal ?? item.rate), 0) * 100) / 100;
+    updateData.lineItems = {
+      deleteMany: {},
+      create: lineItems.map((li) => ({
         visitNoteId: li.visit_note_id,
         patientName: li.patient_name,
         visitDate: new Date(li.visit_date),
@@ -216,9 +248,9 @@ export async function updateInvoice(id, data) {
         therapistName: li.therapist_name,
         rate: li.rate,
         quantity: li.quantity || 1,
-        subtotal: li.subtotal || li.rate,
+        subtotal: li.subtotal ?? li.rate,
       })),
-    });
+    };
   }
 
   await prisma.invoice.update({ where: { id }, data: updateData });

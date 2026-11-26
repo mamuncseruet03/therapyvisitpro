@@ -1,3 +1,4 @@
+import { licenseBlocksAccess } from "@/lib/therapist-license";
 import { headers } from "next/headers";
 import { createHash } from "crypto";
 import { auth } from "./config";
@@ -26,10 +27,11 @@ async function getBearerUser(): Promise<SessionUser | null> {
   const hashedKey = createHash("sha256").update(token).digest("hex");
   const apiKey = await prisma.apiKey.findUnique({
     where: { hashedKey },
-    include: { user: true },
+    include: { user: { include: { therapist: { select: { personalFiles: true } } } } },
   });
 
-  if (!apiKey || apiKey.revokedAt) return null;
+  if (!apiKey || apiKey.revokedAt || !apiKey.user.isActive) return null;
+  if (apiKey.user.userType === "THERAPIST" && licenseBlocksAccess(apiKey.user.therapist?.personalFiles)) return null;
   if (apiKey.expiresAt && apiKey.expiresAt < new Date()) return null;
 
   prisma.apiKey
@@ -50,7 +52,27 @@ async function getBearerUser(): Promise<SessionUser | null> {
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const session = await auth();
-  if (session?.user) return session.user;
+  if (session?.user) {
+    try {
+      const account = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { isActive: true, therapist: { select: { personalFiles: true } } },
+      });
+      if (account?.isActive &&
+          !(session.user.userType === "THERAPIST" && licenseBlocksAccess(account.therapist?.personalFiles))) {
+        return session.user;
+      }
+      return null;
+    } catch (error) {
+      // Legacy databases do not have users.is_active yet. Auth already
+      // verified the account using a schema-compatible query; keep the JWT
+      // session usable until the migration can be applied by the DB owner.
+      if (error && typeof error === "object" && "code" in error && error.code === "P2022") {
+        return session.user;
+      }
+      throw error;
+    }
+  }
   return getBearerUser();
 }
 

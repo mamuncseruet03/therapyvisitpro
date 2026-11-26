@@ -1,5 +1,7 @@
 "use client";
 
+import Icd10Lookup from "./Icd10Lookup";
+
 import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -233,6 +235,7 @@ export default function PatientForm({ open, onClose, onSave, initial }) {
                 (form.diagnoses || []).map((d, idx) => (
                   <div key={idx} className="flex gap-2 items-start">
                     <div className="flex-1 grid grid-cols-2 gap-2">
+                      <Icd10Lookup onSelect={(match) => set("diagnoses", form.diagnoses.map((item, index) => index === idx ? { ...item, ...match } : item))} />
                       <Input
                         placeholder="Diagnosis"
                         value={d.diagnosis || ""}

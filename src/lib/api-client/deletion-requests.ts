@@ -5,8 +5,8 @@ export async function getDeletionRequests() {
   return handleResponse(res);
 }
 
-export async function approveDeletionRequest(id: string) {
-  const res = await fetch(apiUrl(`/api/v1/deletion-requests/${id}/approve`), { method: "POST" });
+export async function approveDeletionRequest(id: string, password: string) {
+  const res = await fetch(apiUrl(`/api/v1/deletion-requests/${id}/approve`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
   return handleResponse(res);
 }
 

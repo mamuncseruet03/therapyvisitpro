@@ -5,6 +5,7 @@ export type RouteKey =
   | "patients"
   | "therapists"
   | "agencies"
+  | "payers"
   | "visits"
   | "invoices"
   | "payroll"
@@ -24,13 +25,16 @@ export type RouteKey =
   | "my-profile"
   | "weekly-close"
   | "referrals"
+  | "communications"
   | "communication-notes"
   | "deletion-requests"
   | "announcements";
 
 const PAGE_ROUTE_MAP: Record<string, RouteKey> = {
   Agencies: "agencies",
+  Payers: "payers",
   AuditLogs: "audit-logs",
+  Communications: "communications",
   CompanyInformation: "dashboard",
   CompanySettings: "settings",
   CoordinatorTasks: "tasks",
@@ -60,6 +64,7 @@ const PAGE_ROUTE_MAP: Record<string, RouteKey> = {
 
 const API_ROUTE_MAP: Record<string, RouteKey> = {
   agencies: "agencies",
+  payers: "payers",
   "audit-logs": "audit-logs",
   "deletion-requests": "deletion-requests",
   documents: "documents",
@@ -77,6 +82,7 @@ const ROUTE_PERMISSIONS: Record<RouteKey, UserType[]> = {
   patients: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   therapists: ["SUPERUSER", "ADMIN", "COORDINATOR", "HR"],
   agencies: ["SUPERUSER", "ADMIN"],
+  payers: ["SUPERUSER", "ADMIN"],
   visits: ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   invoices: ["SUPERUSER", "ADMIN"],
   payroll: ["SUPERUSER", "ADMIN"],
@@ -97,6 +103,7 @@ const ROUTE_PERMISSIONS: Record<RouteKey, UserType[]> = {
   "my-profile": ["SUPERUSER", "THERAPIST"],
   "weekly-close": ["SUPERUSER", "THERAPIST"],
   referrals: ["SUPERUSER", "ADMIN", "COORDINATOR"],
+  communications: ["SUPERUSER", "ADMIN", "COORDINATOR"],
   "communication-notes": ["SUPERUSER", "ADMIN", "THERAPIST", "COORDINATOR"],
   "deletion-requests": ["SUPERUSER", "ADMIN"],
   announcements: ["SUPERUSER", "ADMIN"],

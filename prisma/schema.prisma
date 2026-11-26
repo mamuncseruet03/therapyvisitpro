@@ -8,6 +8,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 // ─────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────
@@ -174,6 +175,7 @@ model User {
   credentials   String?
   licenseNumber String?     @map("license_number")
   discipline    Discipline?
+  isActive      Boolean     @default(true) @map("is_active")
 
   auditLogs     AuditLog[]
   notifications Notification[] @relation("recipient")
@@ -276,10 +278,10 @@ model Therapist {
   personalFiles       Json? @map("personal_files") @db.JsonB
   disciplinaryActions Json? @map("disciplinary_actions") @db.JsonB
 
-  user                    User?
-  visitNotes              VisitNote[]
-  assignments             ReferralAssignment[] @relation("primary_therapist")
-  supervisedAssignments   ReferralAssignment[] @relation("supervising_therapist")
+  user                  User?
+  visitNotes            VisitNote[]
+  assignments           ReferralAssignment[] @relation("primary_therapist")
+  supervisedAssignments ReferralAssignment[] @relation("supervising_therapist")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -290,24 +292,25 @@ model Therapist {
 }
 
 model VisitNote {
-  id            String      @id @default(uuid())
-  patientId     String      @map("patient_id")
-  patient       Patient     @relation(fields: [patientId], references: [id])
-  patientName   String      @map("patient_name")
-  therapistId   String      @map("therapist_id")
-  therapist     Therapist   @relation(fields: [therapistId], references: [id])
-  therapistName String      @map("therapist_name")
-  visitDate     DateTime    @map("visit_date") @db.Date
-  therapyType   TherapyType @map("therapy_type")
-  visitType     VisitType?  @map("visit_type")
-  agencyId      String?     @map("agency_id")
-  status        VisitStatus @default(DRAFT)
-  durationMinutes Int?      @map("duration_minutes")
-  timeIn        String?     @map("time_in")
-  timeOut       String?     @map("time_out")
-  nonBillable   Boolean     @default(false) @map("non_billable")
-  specialPrice  Decimal?    @map("special_price") @db.Decimal(10, 2)
-  cptCodes      String[]    @map("cpt_codes")
+  vitalAlert CommunicationNote?
+  id              String      @id @default(uuid())
+  patientId       String      @map("patient_id")
+  patient         Patient     @relation(fields: [patientId], references: [id])
+  patientName     String      @map("patient_name")
+  therapistId     String      @map("therapist_id")
+  therapist       Therapist   @relation(fields: [therapistId], references: [id])
+  therapistName   String      @map("therapist_name")
+  visitDate       DateTime    @map("visit_date") @db.Date
+  therapyType     TherapyType @map("therapy_type")
+  visitType       VisitType?  @map("visit_type")
+  agencyId        String?     @map("agency_id")
+  status          VisitStatus @default(DRAFT)
+  durationMinutes Int?        @map("duration_minutes")
+  timeIn          String?     @map("time_in")
+  timeOut         String?     @map("time_out")
+  nonBillable     Boolean     @default(false) @map("non_billable")
+  specialPrice    Decimal?    @map("special_price") @db.Decimal(10, 2)
+  cptCodes        String[]    @map("cpt_codes")
 
   includeSocOasis       Boolean @default(false) @map("include_soc_oasis")
   includeRocOasis       Boolean @default(false) @map("include_roc_oasis")
@@ -413,6 +416,7 @@ model Agency {
   supervisoryVisitFrequency Int?            @map("supervisory_visit_frequency")
   workWeekStartDay          Int             @default(0) @map("work_week_start_day")
   documentationSetup        Json?           @map("documentation_setup") @db.JsonB
+  vitalSignsConfig          Json?           @map("vital_signs_config") @db.JsonB
   requiredVisitDocuments    String[]        @map("required_visit_documents")
   agencyDocuments           Json?           @map("agency_documents") @db.JsonB
   notes                     String?
@@ -429,10 +433,34 @@ model Agency {
   @@map("agencies")
 }
 
+model Payer {
+  treatmentRules Json? @map("treatment_rules") @db.JsonB
+  id             String          @id @default(uuid())
+  name           String
+  payerCode      String?         @map("payer_code")
+  phone          String?
+  fax            String?
+  email          String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  authorizationRequired Boolean @default(false) @map("authorization_required")
+  notes          String?
+  status         TherapistStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@index([status])
+  @@map("payers")
+}
+
 model AgencyContact {
-  id       String @id @default(uuid())
-  agencyId String @map("agency_id")
-  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  id       String  @id @default(uuid())
+  agencyId String  @map("agency_id")
+  agency   Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   name     String
   title    String?
   phone    String?
@@ -566,6 +594,11 @@ model CompanyInfo {
 }
 
 model CommunicationNote {
+  vitalVisitId String? @unique @map("vital_visit_id")
+  vitalVisit   VisitNote? @relation(fields: [vitalVisitId], references: [id], onDelete: Cascade)
+  resolvedAt   DateTime? @map("resolved_at")
+  resolution   String?
+
   id          String   @id @default(uuid())
   patientId   String   @map("patient_id")
   patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)

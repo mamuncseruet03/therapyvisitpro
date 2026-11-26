@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DictationTextarea } from "./DictationButton";
 import VisualAnalogueScale from "./VisualAnalogueScale";
+import { getOutOfRangeVitals } from "@/lib/vital-limits";
 
-export default function VitalsTab({ form, set }) {
+export default function VitalsTab({ form, set, vitalConfig }) {
+  const enabled = vitalConfig?.enabled || ["blood_pressure", "heart_rate", "respiratory_rate", "temperature", "oxygen_saturation", "pain_assessment"];
+  const outOfRange = getOutOfRangeVitals(form.vitals, vitalConfig);
   return (
     <div className="space-y-6">
       <Card>
@@ -30,19 +33,36 @@ export default function VitalsTab({ form, set }) {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div><Label>Blood Pressure</Label><Input placeholder="120/80" value={form.vitals?.blood_pressure || ""} onChange={(e) => set("vitals", { ...form.vitals, blood_pressure: e.target.value })} /></div>
-              <div><Label>Heart Rate (bpm)</Label><Input type="number" placeholder="72" value={form.vitals?.heart_rate || ""} onChange={(e) => set("vitals", { ...form.vitals, heart_rate: e.target.value ? parseInt(e.target.value) : "" })} /></div>
-              <div><Label>Respiratory Rate (rpm)</Label><Input type="number" placeholder="16" value={form.vitals?.respiratory_rate || ""} onChange={(e) => set("vitals", { ...form.vitals, respiratory_rate: e.target.value ? parseInt(e.target.value) : "" })} /></div>
-              <div><Label>Temperature (F)</Label><Input type="number" step="0.1" placeholder="98.6" value={form.vitals?.temperature || ""} onChange={(e) => set("vitals", { ...form.vitals, temperature: e.target.value ? parseFloat(e.target.value) : "" })} /></div>
-              <div><Label>O2 Saturation (%)</Label><Input type="number" placeholder="98" value={form.vitals?.oxygen_saturation || ""} onChange={(e) => set("vitals", { ...form.vitals, oxygen_saturation: e.target.value ? parseInt(e.target.value) : "" })} /></div>
+              {enabled.includes("blood_pressure") && <div><Label>Blood Pressure</Label><Input placeholder="120/80" value={form.vitals?.blood_pressure || ""} onChange={(e) => set("vitals", { ...form.vitals, blood_pressure: e.target.value })} /></div>}
+              {enabled.includes("heart_rate") && <div><Label>Heart Rate (bpm)</Label><Input type="number" placeholder="72" value={form.vitals?.heart_rate || ""} onChange={(e) => set("vitals", { ...form.vitals, heart_rate: e.target.value ? parseInt(e.target.value) : "" })} /></div>}
+              {enabled.includes("respiratory_rate") && <div><Label>Respiratory Rate (rpm)</Label><Input type="number" placeholder="16" value={form.vitals?.respiratory_rate || ""} onChange={(e) => set("vitals", { ...form.vitals, respiratory_rate: e.target.value ? parseInt(e.target.value) : "" })} /></div>}
+              {enabled.includes("temperature") && <div><Label>Temperature (F)</Label><Input type="number" step="0.1" placeholder="98.6" value={form.vitals?.temperature || ""} onChange={(e) => set("vitals", { ...form.vitals, temperature: e.target.value ? parseFloat(e.target.value) : "" })} /></div>}
+              {enabled.includes("oxygen_saturation") && <div><Label>O2 Saturation (%)</Label><Input type="number" placeholder="98" value={form.vitals?.oxygen_saturation || ""} onChange={(e) => set("vitals", { ...form.vitals, oxygen_saturation: e.target.value ? parseInt(e.target.value) : "" })} /></div>}
             </div>
+          )}
+          {form.vitals_not_taken_reason == null && outOfRange.length > 0 && (
+            <ul aria-live="polite" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              {outOfRange.map(({ key, label, reading, lower, upper }) => (
+                <li key={key}>{label} ({reading}) is {lower !== null && reading < lower ? `below the agency minimum of ${lower}` : `above the agency maximum of ${upper}`}.</li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>
 
-      <VisualAnalogueScale value={form.vas_pain_score ?? ""} onChange={(v) => set("vas_pain_score", v)} painLocation={form.pain_location || ""} onPainLocationChange={(v) => set("pain_location", v)} />
+      {enabled.includes("pain_assessment") && <VisualAnalogueScale value={form.vas_pain_score ?? ""} onChange={(v) => set("vas_pain_score", v)} painLocation={form.pain_location || ""} onPainLocationChange={(v) => set("pain_location", v)} />}
 
-      <Card>
+      {enabled.includes("pain_assessment") && <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-slate-800">Pain Details</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div><Label>Patient Chief Complaint (When/Where)</Label><DictationTextarea value={form.pain_chief_complaint || ""} onChange={(e) => set("pain_chief_complaint", e.target.value)} rows={2} /></div>
+          <div><Label className="mb-2 block">Description</Label><div className="flex flex-wrap gap-4">{["Sharp", "Aching", "Dull", "Radiating"].map((item) => <label key={item} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form.pain_descriptions || []).includes(item)} onChange={(e) => { const current = form.pain_descriptions || []; set("pain_descriptions", e.target.checked ? [...current, item] : current.filter((value) => value !== item)); }} />{item}</label>)}</div><Input className="mt-2" placeholder="Other description" value={form.pain_description_other || ""} onChange={(e) => set("pain_description_other", e.target.value)} /></div>
+          <div><Label>Precautions</Label><DictationTextarea value={form.pain_precautions || ""} onChange={(e) => set("pain_precautions", e.target.value)} rows={2} /></div>
+          <div><Label>Patient Education</Label><DictationTextarea value={form.pain_education || ""} onChange={(e) => set("pain_education", e.target.value)} rows={2} /></div>
+        </CardContent>
+      </Card>}
+
+      {enabled.includes("pain_assessment") && <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-slate-800">Frequency of Pain interfering with activity or movement</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
@@ -54,9 +74,9 @@ export default function VitalsTab({ form, set }) {
             ))}
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {form.visit_type === "evaluation" && (
+      {enabled.includes("pain_assessment") && form.visit_type === "evaluation" && (
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-blue-700">Pain Management Effectiveness</CardTitle></CardHeader>
           <CardContent>

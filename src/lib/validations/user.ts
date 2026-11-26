@@ -20,8 +20,24 @@ export const updateUserSchema = createUserSchema.partial().omit({ password: true
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const loginSchema = z.object({
-  email: z.string().email("Valid email required"),
+  email: z.string().trim().toLowerCase().email("Valid email required"),
   password: z.string().min(1, "Password is required"),
 });
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Valid email required"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(32, "Invalid or expired reset link"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+});
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export type LoginInput = z.infer<typeof loginSchema>;

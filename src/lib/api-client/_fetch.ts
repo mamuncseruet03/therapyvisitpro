@@ -9,6 +9,14 @@ export function apiUrl(path: string): string {
 
 export async function handleResponse(res: Response) {
   const body = await res.json();
-  if (!res.ok) throw new Error(body?.error || "Request failed");
+  if (!res.ok) {
+    const error = new Error(
+      res.status === 401
+        ? "Your session expired. Sign in again to continue saving."
+        : body?.error || "Request failed",
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
   return body;
 }

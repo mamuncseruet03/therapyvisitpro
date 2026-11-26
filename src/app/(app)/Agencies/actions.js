@@ -1,5 +1,6 @@
 "use server";
 
+import { agencyContactFields, agencyPreferenceChoices, agencyPreferenceFlags } from "@/lib/agency-preferences";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit";
@@ -22,28 +23,28 @@ const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
 function toValidationInput(data) {
   return {
     name: data.name,
-    address: data.address,
-    city: data.city,
-    state: data.state,
-    zip: data.zip,
-    phone: data.phone,
-    fax: data.fax,
-    email: data.email,
+    address: data.address === null ? "" : data.address,
+    city: data.city === null ? "" : data.city,
+    state: data.state === null ? "" : data.state,
+    zip: data.zip === null ? "" : data.zip,
+    phone: data.phone === null ? "" : data.phone,
+    fax: data.fax === null ? "" : data.fax,
+    email: data.email === null ? "" : data.email,
     documentMode: data.document_mode ? upper(data.document_mode) : undefined,
     assistantsAllowed: data.assistants_allowed,
     supervisoryVisitFrequency: data.supervisory_visit_frequency || undefined,
     workWeekStartDay: data.work_week_start_day,
     requiredVisitDocuments: data.required_visit_documents,
-    notes: data.notes,
+    notes: data.notes === null ? "" : data.notes,
     status: data.status ? upper(data.status) : undefined,
     contacts: Array.isArray(data.contacts)
       ? data.contacts
           .filter((c) => c.name?.trim())
           .map((c) => ({
             name: c.name,
-            title: c.title,
-            phone: c.phone,
-            email: c.email,
+            title: c.title ?? undefined,
+            phone: c.phone ?? undefined,
+            email: c.email ?? undefined,
           }))
       : undefined,
   };
@@ -60,11 +61,13 @@ function toSnakeCase(a) {
     phone: a.phone,
     fax: a.fax,
     email: a.email,
+    preferences: a.vitalSignsConfig?.agency_preferences,
     document_mode: a.documentMode?.toLowerCase(),
     assistants_allowed: a.assistantsAllowed,
     supervisory_visit_frequency: a.supervisoryVisitFrequency,
     work_week_start_day: a.workWeekStartDay,
     documentation_setup: a.documentationSetup,
+    vital_signs_config: a.vitalSignsConfig,
     required_visit_documents: a.requiredVisitDocuments || [],
     agency_documents: a.agencyDocuments,
     notes: a.notes,
@@ -86,11 +89,11 @@ function toSnakeCase(a) {
   };
 }
 
-export async function getAgencies() {
+export async function getAgencies(includeInactive = false) {
   await requireRole("SUPERUSER", "ADMIN", "COORDINATOR");
 
   const agencies = await prisma.agency.findMany({
-    where: { status: "ACTIVE" },
+    where: includeInactive ? undefined : { status: "ACTIVE" },
     include: {
       contacts: true,
       rates: true,
@@ -136,6 +139,9 @@ export async function createAgency(data) {
       documentMode: v.documentMode || "THERADOCS",
       assistantsAllowed: v.assistantsAllowed !== false,
       supervisoryVisitFrequency: v.supervisoryVisitFrequency || null,
+      documentationSetup: data.documentation_setup || null,
+      vitalSignsConfig: data.vital_signs_config || null,
+      requiredVisitDocuments: v.requiredVisitDocuments || [],
       contacts: v.contacts?.length ? {
         create: v.contacts.map(c => ({
           name: c.name,
@@ -195,6 +201,13 @@ export async function updateAgency(id, data) {
       updateData.supervisoryVisitFrequency = v.supervisoryVisitFrequency ?? null;
     }
     if (data.documentation_setup !== undefined) updateData.documentationSetup = data.documentation_setup;
+    if (data.vital_signs_config !== undefined) {
+      const agency = await tx.agency.findUniqueOrThrow({ where: { id }, select: { vitalSignsConfig: true } });
+      const preferences = agency.vitalSignsConfig?.agency_preferences;
+      updateData.vitalSignsConfig = preferences
+        ? { ...data.vital_signs_config, agency_preferences: preferences }
+        : data.vital_signs_config;
+    }
     if (v.requiredVisitDocuments !== undefined) updateData.requiredVisitDocuments = v.requiredVisitDocuments;
     if (v.workWeekStartDay !== undefined) updateData.workWeekStartDay = v.workWeekStartDay;
 
@@ -247,4 +260,28 @@ export async function deleteAgency(id) {
   });
 
   return { success: true };
+}
+
+export async function saveAgencyPreferences(id, preferences) {
+  await requireRole("SUPERUSER", "ADMIN");
+  const values = {};
+  for (const [key, choices] of Object.entries(agencyPreferenceChoices)) {
+    if (!choices.includes(preferences?.[key])) throw new Error("Choose a valid agency preference.");
+    values[key] = preferences[key];
+  }
+  for (const key of agencyPreferenceFlags) values[key] = preferences?.[key] === true;
+  for (const key of agencyContactFields) {
+    values[key] = typeof preferences?.[key] === "string" ? preferences[key].trim().slice(0, 60) : "";
+  }
+  const day = agencyPreferenceChoices.work_week_start.indexOf(values.work_week_start);
+  const status = values.inactive ? "INACTIVE" : "ACTIVE";
+  const updated = await prisma.$executeRaw`
+    UPDATE agencies
+    SET vital_signs_config = jsonb_set(COALESCE(vital_signs_config, '{}'::jsonb), '{agency_preferences}', ${JSON.stringify(values)}::jsonb),
+        work_week_start_day = ${day}::int,
+        status = ${status}::"TherapistStatus",
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${id}
+  `;
+  if (!updated) throw new Error("Agency not found.");
 }

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Search, FileText, Upload, Pencil } from "lucide-react";
+import { Search, FileText, Upload, Pencil, ExternalLink } from "lucide-react";
 
 const actionColors = {
   pending: "bg-slate-100 text-slate-700",
@@ -66,6 +66,7 @@ export default function ReferralListTab({ onEdit }) {
               <TableHead className="hidden lg:table-cell">Therapy Types</TableHead>
               <TableHead className="hidden xl:table-cell">Insurance</TableHead>
               <TableHead className="hidden md:table-cell">Source</TableHead>
+              <TableHead className="hidden md:table-cell">Face Sheet</TableHead>
               <TableHead>Patient Action</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
@@ -73,11 +74,11 @@ export default function ReferralListTab({ onEdit }) {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-slate-400">Loading...</TableCell>
+                <TableCell colSpan={9} className="text-center py-8 text-slate-400">Loading...</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-slate-400">No referrals found</TableCell>
+                <TableCell colSpan={9} className="text-center py-8 text-slate-400">No referrals found</TableCell>
               </TableRow>
             ) : filtered.map((r) => (
               <TableRow key={r.id} className="hover:bg-slate-50/60">
@@ -112,6 +113,13 @@ export default function ReferralListTab({ onEdit }) {
                       <FileText className="w-3 h-3" /> Manual
                     </span>
                   )}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  {r.face_sheet?.url ? (
+                    <a href={r.face_sheet.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline">
+                      <ExternalLink className="h-3 w-3" /> View
+                    </a>
+                  ) : <span className="text-sm text-slate-400">---</span>}
                 </TableCell>
                 <TableCell>
                   <Badge className={`text-xs capitalize ${actionColors[r.patient_action || "pending"]}`}>

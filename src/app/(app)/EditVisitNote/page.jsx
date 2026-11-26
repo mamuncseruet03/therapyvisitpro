@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Lock } from "lucide-react";
@@ -23,6 +23,11 @@ function EditVisitNoteContent() {
   const [therapists, setTherapists] = useState([]);
   const [agencies, setAgencies] = useState([]);
   const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
+  const autoSaveMessageTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (autoSaveMessageTimerRef.current) window.clearTimeout(autoSaveMessageTimerRef.current);
+  }, []);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -61,14 +66,18 @@ function EditVisitNoteContent() {
   };
 
   const handleAutoSave = async (data) => {
+    if (autoSaveMessageTimerRef.current) window.clearTimeout(autoSaveMessageTimerRef.current);
     setAutoSaveStatus("saving");
     try {
-      const result = await saveVisitNote({ ...data, id, status: "draft" });
+      const result = await saveVisitNote({ ...data, id, status: data.status || "draft" });
       if (!result?.success) throw new Error("Autosave failed");
       setAutoSaveStatus("saved");
+      autoSaveMessageTimerRef.current = window.setTimeout(() => {
+        setAutoSaveStatus("idle");
+      }, 3_000);
     } catch (err) {
       console.error(err);
-      setAutoSaveStatus("error");
+      setAutoSaveStatus(err?.status === 401 ? "session-expired" : "error");
       throw err;
     }
   };

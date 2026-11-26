@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/auth/session";
+import { verifyPassword } from "@/lib/auth/password";
+import { executePatientDeletion } from "@/lib/patients/delete-record";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
@@ -33,30 +35,18 @@ export async function getDeletionRequests() {
   }));
 }
 
-export async function approveDeletionRequest(id) {
+export async function approveDeletionRequest(id, password) {
   const user = await requireRole("SUPERUSER", "ADMIN");
 
-  const request = await prisma.deletionRequest.findUnique({ where: { id } });
-  if (!request) throw new Error("Request not found");
-  if (
-    request.requestedBy === user.email ||
-    request.patientSnapshot?.localRequesterEmail === user.email
-  ) {
-    throw new Error("Cannot approve your own deletion request");
+  const account = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
+  if (typeof password !== "string" || !account?.passwordHash || !await verifyPassword(password, account.passwordHash)) {
+    return { error: "Incorrect password" };
   }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.visitNote.deleteMany({ where: { patientId: request.patientId } });
-    await tx.patient.delete({ where: { id: request.patientId } });
-    await tx.deletionRequest.update({
-      where: { id },
-      data: {
-        status: "APPROVED",
-        approvedBy: user.email,
-        approvedByName: user.fullName || user.email,
-        approvedAt: new Date(),
-      },
-    });
+  const request = await prisma.$transaction(async (tx) => {
+    const pending = await tx.deletionRequest.findFirst({ where: { id, status: "PENDING" } });
+    if (!pending) throw new Error("Pending request not found");
+    await executePatientDeletion(tx, pending.patientId);
+    return pending;
   });
 
   const h = await headers();

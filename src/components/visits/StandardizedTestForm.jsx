@@ -73,9 +73,13 @@ const TINETTI_GAIT = [
   { name: "Walking stance", desc: "Heels apart = 0, Heels almost touching = 1" }
 ];
 
-export default function StandardizedTestForm({ tests = [], onChange }) {
+export default function StandardizedTestForm({ tests = [], onChange, draft = null, onDraftChange }) {
   const [selectedTest, setSelectedTest] = useState("");
-  const [currentTest, setCurrentTest] = useState(null);
+  const currentTest = draft;
+  const setCurrentTest = (value) => {
+    const nextValue = typeof value === "function" ? value(currentTest) : value;
+    onDraftChange?.(nextValue);
+  };
 
   const addTest = (testType) => {
     if (!testType) return;
@@ -89,6 +93,10 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
       interpretation: ""
     };
 
+    // Add the test to form state immediately. Every score entered below then
+    // updates this same item, so the 2-second form autosave can persist work
+    // even before Calculate & Save is pressed.
+    onChange([...tests, newTest]);
     setCurrentTest(newTest);
     setSelectedTest("");
   };
@@ -133,7 +141,14 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
       finalTest.interpretation = currentTest.scores.interpretation || "";
     }
 
-    onChange([...tests, finalTest]);
+    onChange(tests.some((test) => test.id === finalTest.id)
+      ? tests.map((test) => test.id === finalTest.id ? finalTest : test)
+      : [...tests, finalTest]);
+    setCurrentTest(null);
+  };
+
+  const cancelTest = () => {
+    if (currentTest) onChange(tests.filter((test) => test.id !== currentTest.id));
     setCurrentTest(null);
   };
 
@@ -142,10 +157,18 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
   };
 
   const updateScore = (key, value) => {
-    setCurrentTest({
+    const updatedTest = {
       ...currentTest,
       scores: { ...currentTest.scores, [key]: value }
-    });
+    };
+    setCurrentTest(updatedTest);
+    onChange(tests.map((test) => test.id === updatedTest.id ? updatedTest : test));
+  };
+
+  const updateTestDate = (date) => {
+    const updatedTest = { ...currentTest, date };
+    setCurrentTest(updatedTest);
+    onChange(tests.map((test) => test.id === updatedTest.id ? updatedTest : test));
   };
 
   const getTestName = (type) => {
@@ -163,10 +186,10 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
 
   return (
     <div className="space-y-4">
-      {tests.length > 0 && (
+      {tests.some((test) => test.id !== currentTest?.id) && (
         <div className="space-y-2">
           <Label className="text-sm font-medium">Completed Tests</Label>
-          {tests.map((test) => (
+          {tests.filter((test) => test.id !== currentTest?.id).map((test) => (
             <div key={test.id} className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
               <div className="flex-1">
                 <div className="font-medium text-sm">{getTestName(test.type)}</div>
@@ -220,7 +243,7 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">{getTestName(currentTest.type)}</CardTitle>
               <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentTest(null)}>
+                <Button type="button" variant="outline" size="sm" onClick={cancelTest}>
                   Cancel
                 </Button>
                 <Button type="button" size="sm" onClick={saveTest} className="bg-blue-600 hover:bg-blue-700">
@@ -236,7 +259,7 @@ export default function StandardizedTestForm({ tests = [], onChange }) {
                 <Input
                   type="date"
                   value={currentTest.date}
-                  onChange={(e) => setCurrentTest({ ...currentTest, date: e.target.value })}
+                  onChange={(e) => updateTestDate(e.target.value)}
                   className="max-w-xs"
                 />
               </div>

@@ -76,6 +76,7 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
   };
 
   const getEffectiveRate = (visit) => {
+    if (visit.payer_rate != null) return visit.payer_rate;
     return rateOverrides[visit.id] !== undefined
       ? parseFloat(rateOverrides[visit.id]) || 0
       : getAgencyRate(visit);
@@ -231,7 +232,9 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
                             min="0"
                             step="0.01"
                             className="h-8 w-24 text-sm"
-                            value={rateOverrides[v.id] !== undefined ? rateOverrides[v.id] : getAgencyRate(v)}
+                            value={v.payer_rate ?? rateOverrides[v.id] ?? getAgencyRate(v)}
+                            readOnly={v.payer_rate != null}
+                            title={v.payer_rate != null ? "Payer special rate" : undefined}
                             onChange={(e) => setRateOverrides((prev) => ({ ...prev, [v.id]: e.target.value }))}
                           />
                         </TableCell>

@@ -43,7 +43,7 @@ export default function MedicalRecordDeletions() {
     if (!approveDialog) return;
     setActionLoading(true);
     try {
-      const result = await approveDeletionRequest(approveDialog.id);
+      const result = await approveDeletionRequest(approveDialog.id, password);
       if (result?.success) {
         toast.success("Medical record deleted permanently");
         loadRequests();
@@ -79,7 +79,7 @@ export default function MedicalRecordDeletions() {
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-slate-800">Medical Record Deletion Requests</h2>
-        <p className="text-xs text-slate-500 mt-0.5">A second admin (not the requester) must approve each deletion.</p>
+        <p className="text-xs text-slate-500 mt-0.5">Review therapist requests to permanently delete patient records.</p>
       </div>
 
       {isLoading ? (
@@ -111,7 +111,6 @@ export default function MedicalRecordDeletions() {
                         <p className="text-xs text-slate-500">Reason: <span className="text-slate-700">{req.reason}</span></p>
                         <p className="text-xs text-slate-500">Visit notes to delete: <span className="font-semibold text-red-600">{req.visit_notes_count ?? "?"}</span></p>
                       </div>
-                      {!req.is_current_user_request ? (
                         <div className="flex gap-2 shrink-0">
                           <Button
                             size="sm"
@@ -129,9 +128,6 @@ export default function MedicalRecordDeletions() {
                             <CheckCircle className="w-3.5 h-3.5" /> Approve & Delete
                           </Button>
                         </div>
-                      ) : (
-                        <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Awaiting another admin</Badge>
-                      )}
                     </div>
                   </CardContent>
                 </Card>

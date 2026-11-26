@@ -25,12 +25,23 @@ const AGING_BUCKETS = [
   { label: "90+ days",             min: 91,  max: Infinity },
 ];
 
+const BILLING_COLUMNS = [
+  ["created_at", "Billing Date"],
+  ["invoice_number", "Invoice #"],
+  ["notes", "Notes"],
+  ["agency_name", "Agency"],
+  ["total_amount", "Visit Billing"],
+  ["mileage_amount", "Mileage Billing"],
+];
+const money = (value) => `$${Number(value ?? 0).toFixed(2)}`;
+
 export default function AccountsReceivableReport() {
   const [dateFrom, setDateFrom] = useState(format(subMonths(new Date(), 6), "yyyy-MM-01"));
   const [dateTo, setDateTo]     = useState(format(new Date(), "yyyy-MM-dd"));
 
   const [invoices, setInvoices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sort, setSort] = useState({ key: "created_at", descending: true });
 
   useEffect(() => {
     getInvoices()
@@ -51,6 +62,12 @@ export default function AccountsReceivableReport() {
   });
 
   const allUnpaid = invoices.filter(inv => inv.status !== "void" && inv.status !== "paid");
+  const billingRows = [...filtered].sort((a, b) => {
+    const compare = ["total_amount", "mileage_amount"].includes(sort.key)
+      ? Number(a[sort.key] ?? 0) - Number(b[sort.key] ?? 0)
+      : String(a[sort.key] ?? "").localeCompare(String(b[sort.key] ?? ""), undefined, { numeric: true });
+    return sort.descending ? -compare : compare;
+  });
 
   const totalOutstanding = allUnpaid.reduce((s, inv) => s + (inv.total_amount || 0), 0);
   const totalDraft       = allUnpaid.filter(i => i.status === "draft").reduce((s, i) => s + (i.total_amount || 0), 0);
@@ -148,6 +165,42 @@ export default function AccountsReceivableReport() {
                 <TableCell className="text-center">{allUnpaid.length}</TableCell>
                 <TableCell className="text-right text-teal-700">${totalOutstanding.toFixed(2)}</TableCell>
               </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Billing Details</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader><TableRow>
+              {BILLING_COLUMNS.map(([key, label]) => (
+                <TableHead key={key} aria-sort={sort.key === key ? (sort.descending ? "descending" : "ascending") : undefined}>
+                  <button type="button" onClick={() => setSort({ key, descending: sort.key === key && !sort.descending })}>{label}</button>
+                </TableHead>
+              ))}
+              <TableHead>PDF</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {billingRows.map((invoice) => (
+                <TableRow key={invoice.id}>
+                  <TableCell>{invoice.created_at?.slice(0, 10) || "—"}</TableCell>
+                  <TableCell>{invoice.invoice_number || "—"}</TableCell>
+                  <TableCell>{invoice.notes || "—"}</TableCell>
+                  <TableCell>{invoice.agency_name || "—"}</TableCell>
+                  <TableCell>{money(invoice.total_amount)}</TableCell>
+                  <TableCell>{money(invoice.mileage_amount)}</TableCell>
+                  <TableCell><a className="text-teal-700 underline" href={`/api/v1/documents/pdf?type=invoice&id=${encodeURIComponent(invoice.id)}`} download>Download PDF</a></TableCell>
+                </TableRow>
+              ))}
+              {!billingRows.length && <TableRow><TableCell colSpan={7}>{isLoading ? "Loading…" : "No outstanding invoices in this range."}</TableCell></TableRow>}
+              {billingRows.length > 0 && <TableRow className="font-semibold">
+                <TableCell colSpan={4}>Total</TableCell>
+                <TableCell>{money(billingRows.reduce((sum, invoice) => sum + Number(invoice.total_amount ?? 0), 0))}</TableCell>
+                <TableCell>{money(billingRows.reduce((sum, invoice) => sum + Number(invoice.mileage_amount ?? 0), 0))}</TableCell>
+                <TableCell />
+              </TableRow>}
             </TableBody>
           </Table>
         </CardContent>

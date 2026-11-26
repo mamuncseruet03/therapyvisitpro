@@ -24,8 +24,10 @@ export async function PATCH(
     const { id } = await params;
     const data = await request.json();
     const result = await saveVisitNote({ ...data, id });
+    if (result.error) return apiError(result.error);
     return apiSuccess(result);
   } catch (err) {
+    console.error("Visit note PATCH failed", err);
     return handleApiError(err);
   }
 }

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { User, FileText, Phone, Mail, Award, ExternalLink, Pencil } from "lucide-react";
 import { toast } from "sonner";
+import { changeCurrentUserPassword } from "@/lib/api-client/users";
 
 const FILE_FIELDS = [
   { key: "resume", label: "Resume" },
@@ -23,6 +24,67 @@ const FILE_FIELDS = [
   { key: "flu_vaccination", label: "Flu Vaccination" },
   { key: "hepatitis_b", label: "Hepatitis B" },
 ];
+
+function PasswordChangeCard() {
+  const [passwords, setPasswords] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const handlePasswordChange = async (event) => {
+    event.preventDefault();
+    if (passwords.newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters.");
+      return;
+    }
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      await changeCurrentUserPassword({
+        currentPassword: passwords.currentPassword,
+        newPassword: passwords.newPassword,
+      });
+      setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast.success("Password changed successfully.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to change password");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold">Account Security</CardTitle>
+        <p className="text-xs text-slate-500">Replace your temporary password with one only you know.</p>
+      </CardHeader>
+      <CardContent>
+        <form className="space-y-4" onSubmit={handlePasswordChange}>
+          <div>
+            <Label htmlFor="current-password">Current Password</Label>
+            <Input id="current-password" type="password" autoComplete="current-password" required value={passwords.currentPassword} onChange={(event) => setPasswords((value) => ({ ...value, currentPassword: event.target.value }))} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="new-password">New Password</Label>
+              <Input id="new-password" type="password" autoComplete="new-password" minLength={8} required value={passwords.newPassword} onChange={(event) => setPasswords((value) => ({ ...value, newPassword: event.target.value }))} />
+            </div>
+            <div>
+              <Label htmlFor="confirm-password">Confirm New Password</Label>
+              <Input id="confirm-password" type="password" autoComplete="new-password" minLength={8} required value={passwords.confirmPassword} onChange={(event) => setPasswords((value) => ({ ...value, confirmPassword: event.target.value }))} />
+            </div>
+          </div>
+          <Button type="submit" disabled={savingPassword} className="bg-teal-600 hover:bg-teal-700">
+            {savingPassword ? "Changing…" : "Change Password"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function MyProfile() {
   const effectiveUser = useCurrentUser();
@@ -108,6 +170,7 @@ export default function MyProfile() {
           <User className="w-10 h-10 mx-auto mb-3 opacity-40" />
           <p>No therapist profile found for your account.</p>
         </CardContent></Card>
+        <PasswordChangeCard />
       </div>
     );
   }
@@ -256,6 +319,8 @@ export default function MyProfile() {
           })}
         </CardContent>
       </Card>
+
+      <PasswordChangeCard />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { ClipboardCheck, CheckCircle, Eye, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 import { toast } from "sonner";
+import { patientAllowsAssistants } from "@/app/(app)/Payers/actions";
 import { createAssignment } from "@/lib/api-client/referrals";
 import { saveVisitNote } from "@/lib/api-client/visit-notes";
 import { canAssignTherapist, isAssistantTherapist } from "@/lib/assignments/eligibility";
@@ -27,26 +28,42 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
   const [approvedVisits, setApprovedVisits] = useState([]);
   const [treatingTherapistId, setTreatingTherapistId] = useState("");
   const [supervisingTherapistId, setSupervisingTherapistId] = useState("");
+  const [loadingRules, setLoadingRules] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const pendingEvals = visits.filter(
-    (v) =>
+  const pendingEvals = visits.filter((v) => {
+    const weeklyVisits = v.therapy_orders?.weekly_visits || [];
+    const hasTreatmentOrders = v.therapy_orders?.eval_only !== true &&
+      weeklyVisits.some((week) => Number(week.visits) > 0);
+    return (
       (v.visit_type === "evaluation" || (v.visit_type === "re_evaluation" && v.create_update_orders === "Yes")) &&
       (v.status === "completed" || v.status === "signed") &&
-      !v.treatment_approved
-  );
+      !v.treatment_approved &&
+      hasTreatmentOrders
+    );
+  });
 
-  const openDialog = (visit) => {
+  const openDialog = async (visit) => {
+    setLoadingRules(true);
+    let assistantsAllowed;
+    try {
+      assistantsAllowed = await patientAllowsAssistants(visit.patient_id);
+    } catch {
+      toast.error("Could not load payer rules. Please try again.");
+      return;
+    } finally {
+      setLoadingRules(false);
+    }
     const weeklyVisits = visit.therapy_orders?.weekly_visits || [];
     setApprovedVisits(weeklyVisits.map((w) => ({ ...w, approved_visits: w.visits ?? 0 })));
     setTreatingTherapistId("");
     setSupervisingTherapistId("");
-    setApproveDialog(visit);
+    setApproveDialog({ ...visit, payerAllowsAssistants: assistantsAllowed });
   };
 
   const getAvailableTherapists = (therapyType, patientAgency) => {
     const agencyRecord = agencies.find(a => a.name === patientAgency);
-    const assistantsAllowed = agencyRecord ? agencyRecord.assistants_allowed !== false : true;
+    const assistantsAllowed = agencyRecord?.assistants_allowed !== false && approveDialog?.payerAllowsAssistants === true;
     return therapists.filter((t) => canAssignTherapist(t, therapyType, "treatment", assistantsAllowed));
   };
 
@@ -58,6 +75,7 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
   const handleApprove = async (visit) => {
     if (!treatingTherapistId) return;
     setSubmitting(true);
+    let approvalSaved = false;
     try {
       const treatingTherapist = therapists.find(t => t.id === treatingTherapistId);
       const supervisingTherapist = supervisingTherapistId
@@ -70,6 +88,7 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
         treatment_approved_date: new Date().toISOString(),
       });
       if (!visitResult?.success) throw new Error(visitResult?.error || "Evaluation approval could not be saved");
+      approvalSaved = true;
 
       const assignmentResult = await createAssignment({
         patient_id: visit.patient_id,
@@ -96,6 +115,11 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
       await onRefresh?.();
       setApproveDialog(null);
     } catch (err) {
+      // Keep the order visible for retry if assignment creation fails after
+      // the approval flag was written.
+      if (approvalSaved) {
+        await saveVisitNote({ id: visit.id, treatment_approved: false }).catch(() => {});
+      }
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to approve orders");
     } finally {
@@ -152,6 +176,7 @@ export default function OrdersAwaitingApproval({ visits, therapists = [], agenci
                     <div className="flex flex-col gap-1.5 shrink-0">
                       <Button
                         size="sm"
+                        disabled={loadingRules}
                         onClick={() => openDialog(visit)}
                         className="bg-teal-600 hover:bg-teal-700 gap-1"
                       >

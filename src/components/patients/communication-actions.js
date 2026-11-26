@@ -9,6 +9,10 @@ export async function getCommunicationNotes(patientId) {
   const notes = await prisma.communicationNote.findMany({
     where: { patientId },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true, patientId: true, patientName: true, authorId: true,
+      authorName: true, authorEmail: true, note: true, noteType: true, createdAt: true,
+    },
   });
 
   return notes.map(n => ({
@@ -28,6 +32,7 @@ export async function addCommunicationNote({ patientId, patientName, note, noteT
   const user = await requireAuth();
 
   const created = await prisma.communicationNote.create({
+    select: { id: true },
     data: {
       patientId,
       patientName,

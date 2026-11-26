@@ -1,5 +1,7 @@
 "use client";
 
+import VitalMessages from "./VitalMessages";
+
 import React, { useState, useEffect, useCallback } from "react";
 import { Users, FileText, Clock, CheckCircle, ChevronRight, DollarSign } from "lucide-react";
 import Link from "next/link";
@@ -67,6 +69,7 @@ export default function TherapistDashboard({ user }) {
 
   return (
     <div className="space-y-8">
+      <VitalMessages key={user?.id} userId={user?.id} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Dashboard</h1>

@@ -20,7 +20,12 @@ export default function AssessmentTab({ form, set }) {
           </div>
           <div className="border-t pt-4">
             <Label className="text-blue-700 font-semibold mb-3 block">Standardized Testing</Label>
-            <StandardizedTestForm tests={form.standardized_tests || []} onChange={(tests) => set("standardized_tests", tests)} />
+            <StandardizedTestForm
+              tests={form.standardized_tests || []}
+              onChange={(tests) => set("standardized_tests", tests)}
+              draft={form.standardized_test_draft || null}
+              onDraftChange={(draft) => set("standardized_test_draft", draft)}
+            />
             <div className="mt-3"><Label className="text-sm text-slate-600">Additional Notes</Label><DictationTextarea placeholder="Additional testing notes or observations..." value={form.standardized_testing || ""} onChange={(e) => set("standardized_testing", e.target.value)} rows={2} /></div>
           </div>
         </CardContent>

@@ -6,7 +6,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { logAudit } from "@/lib/audit";
 import { headers } from "next/headers";
 import { getClientIp } from "@/lib/audit/logger";
-import { createUserSchema, updateUserSchema } from "@/lib/validations/user";
+import { changePasswordSchema, createUserSchema, updateUserSchema } from "@/lib/validations/user";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -80,6 +80,7 @@ const DISCIPLINE_MAP = {
 
 function toValidationInput(data) {
   return {
+    fullName: data.full_name,
     phone: data.phone,
     userType: data.user_type ? upper(data.user_type) : undefined,
     credentials: data.credentials,
@@ -102,26 +103,26 @@ function toSnakeCase(user) {
     credentials: user.credentials,
     license_number: user.licenseNumber,
     discipline: user.discipline,
+    access_status: user.isActive === false ? "inactive" : "active",
     created_at: user.createdAt,
   };
+}
+
+async function hasUserAccessStatus() {
+  const [schema] = await prisma.$queryRaw`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_attribute
+      WHERE attrelid = to_regclass('users') AND attname = 'is_active' AND NOT attisdropped
+    ) AS enabled
+  `;
+  return schema.enabled;
 }
 
 export async function getUsers() {
   await requireRole("SUPERUSER", "ADMIN");
 
+  const accessStatusAvailable = await hasUserAccessStatus();
   const users = await prisma.user.findMany({
-    where: {
-      email: {
-        in: [
-          "compliance1@aaahealthgroup.com",
-          "ameya@aaahealthgroup.com",
-          "intake2@aaahealthgroup.com",
-          "rehab@aaahealthgroup.com",
-          "adorsatwar@apexrehabgroup.com",
-          "dorsatwar.ameya@gmail.com",
-        ],
-      },
-    },
     select: {
       id: true,
       email: true,
@@ -133,6 +134,7 @@ export async function getUsers() {
       credentials: true,
       licenseNumber: true,
       discipline: true,
+      ...(accessStatusAvailable ? { isActive: true } : {}),
       createdAt: true,
     },
     orderBy: { createdAt: "desc" },
@@ -226,6 +228,7 @@ export async function updateUser({ id, data }) {
   };
 
   const updateData = {};
+  if (v.fullName !== undefined) updateData.fullName = v.fullName;
   if (v.userType !== undefined) {
     updateData.userType = v.userType;
     updateData.role = roleMap[data.user_type] ?? "USER";
@@ -235,7 +238,54 @@ export async function updateUser({ id, data }) {
   if (v.licenseNumber !== undefined) updateData.licenseNumber = v.licenseNumber;
   if (data.discipline !== undefined) updateData.discipline = v.discipline || null;
 
-  await prisma.user.update({ where: { id }, data: updateData });
+  if (data.access_status !== undefined) {
+    if (!["active", "inactive"].includes(data.access_status)) {
+      return { error: "Access status must be active or inactive" };
+    }
+
+    if (!await hasUserAccessStatus()) {
+      return { error: "Account activation requires the user access status database migration.", status: 503 };
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: { isActive: true, userType: true },
+    });
+    if (!target) return { error: "User not found" };
+
+    const nextIsActive = data.access_status === "active";
+    if (!nextIsActive && user.id === id) {
+      return { error: "You cannot deactivate your own account" };
+    }
+    if (user.userType === "ADMIN" && target.userType === "SUPERUSER" && nextIsActive !== target.isActive) {
+      return { error: "Admins cannot change a Super Admin's access status" };
+    }
+    if (!nextIsActive && target.userType === "SUPERUSER" && target.isActive) {
+      const activeSuperusers = await prisma.user.count({
+        where: { userType: "SUPERUSER", isActive: true },
+      });
+      if (activeSuperusers <= 1) {
+        return { error: "The last active Super Admin cannot be deactivated" };
+      }
+    }
+    updateData.isActive = nextIsActive;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.user.findUnique({ where: { id }, select: { therapistId: true } });
+    // Select only a column that exists in both the current and legacy schemas.
+    // Without an explicit select Prisma returns every scalar field after UPDATE,
+    // including users.is_active, which is not present in older databases and
+    // makes otherwise valid profile edits fail with P2022.
+    await tx.user.update({
+      where: { id },
+      data: updateData,
+      select: { id: true },
+    });
+    if (current?.therapistId && v.fullName !== undefined) {
+      await tx.therapist.update({ where: { id: current.therapistId }, data: { fullName: v.fullName }, select: { id: true } });
+    }
+  });
 
   const h = await headers();
   await logAudit({
@@ -243,10 +293,54 @@ export async function updateUser({ id, data }) {
     action: "UPDATE",
     resourceType: "User",
     resourceId: id,
-    details: "Updated user profile",
+    details: data.access_status !== undefined
+      ? `Updated user profile; access status: ${data.access_status}`
+      : "Updated user profile",
     ipAddress: getClientIp(h),
   });
 
+  return { success: true };
+}
+
+export async function deleteUser(id) {
+  const actor = await requireRole("SUPERUSER", "ADMIN");
+  if (actor.id === id) return { error: "You cannot delete your own account" };
+
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: { email: true, fullName: true, userType: true },
+  });
+  if (!target) return { error: "User not found" };
+  if (actor.userType === "ADMIN" && target.userType === "SUPERUSER") {
+    return { error: "Admins cannot delete a Super Admin account" };
+  }
+  if (target.userType === "SUPERUSER") {
+    const superuserCount = await prisma.user.count({ where: { userType: "SUPERUSER" } });
+    if (superuserCount <= 1) return { error: "The last Super Admin account cannot be deleted" };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Older databases may not have applied the API keys migration yet.
+    const [schema] = await tx.$queryRaw`SELECT to_regclass('api_keys') IS NOT NULL AS has_api_keys`;
+    if (schema.has_api_keys) {
+      await tx.apiKey.deleteMany({ where: { userId: id } });
+    }
+    await tx.auditLog.updateMany({ where: { userId: id }, data: { userId: null } });
+    await tx.notification.updateMany({ where: { recipientId: id }, data: { recipientId: null } });
+    // Avoid returning newer columns such as is_active on older databases.
+    await tx.user.delete({ where: { id }, select: { id: true } });
+  });
+
+  const h = await headers();
+  await logAudit({
+    user: actor,
+    action: "DELETE",
+    resourceType: "User",
+    resourceId: id,
+    resourceLabel: target.fullName || target.email,
+    details: `Deleted ${target.userType.toLowerCase()} account ${target.email}`,
+    ipAddress: getClientIp(h),
+  });
   return { success: true };
 }
 
@@ -333,6 +427,42 @@ export async function verifyCurrentUserPassword(password) {
   if (!valid) {
     return { success: false, error: "Incorrect password" };
   }
+
+  return { success: true };
+}
+
+export async function changeCurrentUserPassword(data) {
+  const sessionUser = await requireAuth();
+  const parsed = changePasswordSchema.safeParse(data);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const user = await prisma.user.findUnique({
+    where: { id: sessionUser.id },
+    select: { passwordHash: true },
+  });
+  if (!user?.passwordHash) return { error: "Account has no password set" };
+
+  const currentPasswordValid = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+  if (!currentPasswordValid) return { error: "Current password is incorrect" };
+  if (await verifyPassword(parsed.data.newPassword, user.passwordHash)) {
+    return { error: "New password must be different from the current password" };
+  }
+
+  await prisma.user.update({
+    where: { id: sessionUser.id },
+    data: { passwordHash: await hashPassword(parsed.data.newPassword) },
+  });
+
+  const h = await headers();
+  await logAudit({
+    user: sessionUser,
+    action: "UPDATE",
+    resourceType: "User",
+    resourceId: sessionUser.id,
+    resourceLabel: sessionUser.email,
+    details: "Changed account password",
+    ipAddress: getClientIp(h),
+  });
 
   return { success: true };
 }

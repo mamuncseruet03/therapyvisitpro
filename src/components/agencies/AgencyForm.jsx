@@ -1,5 +1,7 @@
 "use client";
 
+import { VITAL_LIMIT_FIELDS } from "@/lib/vital-limits";
+
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -17,6 +19,15 @@ const VISIT_TYPES = [
   { value: "discharge", label: "Discharge" }
 ];
 
+const VITAL_SIGN_OPTIONS = [
+  ["blood_pressure", "Blood Pressure"],
+  ["heart_rate", "Heart Rate"],
+  ["respiratory_rate", "Respiratory Rate"],
+  ["temperature", "Temperature"],
+  ["oxygen_saturation", "O2 Saturation"],
+  ["pain_assessment", "Pain Assessment"],
+];
+
 export default function AgencyForm({ open, onClose, onSave, initial }) {
   const [form, setForm] = useState(initial || {
     name: "",
@@ -31,6 +42,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
     rates: [],
     documents: [],
     required_visit_documents: [],
+    vital_signs_config: { enabled: VITAL_SIGN_OPTIONS.map(([key]) => key), required: true },
     notes: "",
     status: "active",
   });
@@ -83,6 +95,33 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
   };
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoError, setLogoError] = useState("");
+
+  const uploadLogo = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setLogoError("");
+    const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[file.type];
+    if (!extension || file.size > 10 * 1024 * 1024) {
+      setLogoError("Choose a PNG, JPEG, or WebP image up to 10 MB.");
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      const data = new FormData();
+      data.append("file", file, `agency-logo.${extension}`);
+      const response = await fetch("/api/upload", { method: "POST", body: data });
+      const result = await response.json();
+      if (!response.ok || !result.url?.startsWith("/uploads/")) throw new Error();
+      setForm((current) => ({ ...current, vital_signs_config: { ...current.vital_signs_config, logo_url: result.url } }));
+    } catch {
+      setLogoError("Could not upload the agency logo. Try again.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -173,9 +212,11 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await onSave(form);
-    setSaving(false);
-    onClose();
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -305,6 +346,49 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Agency Logo</h3>
+            {form.vital_signs_config?.logo_url && (
+              <div className="mb-2 flex items-center gap-3">
+                <img src={form.vital_signs_config.logo_url} alt="Agency logo" className="h-16 max-w-40 object-contain" />
+                <Button type="button" variant="outline" disabled={uploadingLogo} onClick={() => set("vital_signs_config", { ...form.vital_signs_config, logo_url: null })}>Remove Logo</Button>
+              </div>
+            )}
+            <Input aria-label="Upload agency logo" type="file" accept="image/png,image/jpeg,image/webp" disabled={uploadingLogo} onChange={uploadLogo} />
+            {uploadingLogo && <p role="status">Uploading logo…</p>}
+            {logoError && <p role="alert" className="text-sm text-red-600">{logoError}</p>}
+          </div>
+
+          <div className="border-t pt-4">
+            <h3 className="font-semibold text-sm text-slate-700 mb-1">Vital Signs Setup</h3>
+            <p className="text-xs text-slate-400 mb-3">Choose the vital-sign fields used for patients from this agency.</p>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3">
+              {VITAL_SIGN_OPTIONS.map(([key, label]) => {
+                const enabled = form.vital_signs_config?.enabled || VITAL_SIGN_OPTIONS.map(([option]) => option);
+                return <label key={key} className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={enabled.includes(key)} onChange={(event) => set("vital_signs_config", { ...(form.vital_signs_config || {}), enabled: event.target.checked ? [...enabled, key] : enabled.filter((item) => item !== key) })} />{label}</label>;
+              })}
+              <label className="col-span-2 mt-2 flex items-center gap-2 border-t pt-3 text-sm font-medium text-slate-700"><input type="checkbox" checked={form.vital_signs_config?.required !== false} onChange={(event) => set("vital_signs_config", { ...(form.vital_signs_config || {}), enabled: form.vital_signs_config?.enabled || VITAL_SIGN_OPTIONS.map(([option]) => option), required: event.target.checked })} />Require at least one configured vital or a “not taken” reason</label>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <h3 className="mb-3 text-sm font-semibold text-slate-700">Vital Sign Limits</h3>
+            <div className="grid grid-cols-[2fr_1fr_1fr] items-center gap-2 text-sm">
+              <strong>Vital Sign</strong><strong>Lower Limit</strong><strong>Upper Limit</strong>
+              {VITAL_LIMIT_FIELDS.map(([key, label]) => (
+                <React.Fragment key={key}>
+                  <span>{label}</span>
+                  {["lower", "upper"].map((bound) => <Input key={bound} aria-label={`${label} ${bound} limit`} type="number" step="any"
+                    value={form.vital_signs_config?.limits?.[key]?.[bound] ?? ""}
+                    onChange={(event) => {
+                      const config = form.vital_signs_config || {};
+                      set("vital_signs_config", { ...config, limits: { ...config.limits, [key]: { ...config.limits?.[key], [bound]: event.target.value } } });
+                    }} />)}
+                </React.Fragment>
+              ))}
             </div>
           </div>
 
@@ -439,7 +523,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
             <div className="flex items-center justify-between p-3 rounded-lg bg-blue-50 border border-blue-100 mb-3">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Documentation Source</p>
-                <p className="text-xs text-slate-500 mt-0.5">Agency Docs Only: therapist selects from this agency's uploaded documents during intake</p>
+                <p className="text-xs text-slate-500 mt-0.5">Agency Docs Only: therapist selects from this agency&apos;s uploaded documents during intake</p>
               </div>
               <div className="flex gap-2">
                 <button
@@ -683,7 +767,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
 
         <div className="flex justify-end gap-3">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !form.name} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={handleSave} disabled={saving || uploadingLogo || !form.name} className="bg-teal-600 hover:bg-teal-700">
             <Save className="w-4 h-4 mr-2" />
             {saving ? "Saving..." : "Save Agency"}
           </Button>

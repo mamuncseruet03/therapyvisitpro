@@ -90,6 +90,7 @@ function StrategyTable({ strategies, data, onChange }) {
 }
 
 function ThicknessModal({ title, data, onChange, onClose }) {
+  const columns = title.startsWith("Liquids") ? THICKNESS_COLS : ["Chopped", "Mechanical Soft", "Pureed"];
   const setCell = (rowKey, col, subKey, value) => {
     onChange({
       ...data,
@@ -111,9 +112,9 @@ function ThicknessModal({ title, data, onChange, onClose }) {
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="bg-slate-100">
-                <th className="text-left py-2 px-2 font-semibold text-slate-700 w-36">Liquid</th>
+                <th className="text-left py-2 px-2 font-semibold text-slate-700 w-36">Consistency</th>
                 <th className="text-center py-2 px-1 font-semibold text-slate-600 w-8"></th>
-                {THICKNESS_COLS.map((col) => (
+                {columns.map((col) => (
                   <th key={col} className="text-center py-2 px-2 font-semibold text-slate-700">{col}</th>
                 ))}
               </tr>
@@ -125,7 +126,7 @@ function ThicknessModal({ title, data, onChange, onClose }) {
                   <tr className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
                     <td className="py-1.5 px-2 font-medium text-teal-700 leading-tight">{row.label}</td>
                     <td className="py-1.5 px-1 text-xs text-slate-400"></td>
-                    {THICKNESS_COLS.map((col) => (
+                    {columns.map((col) => (
                       <td key={col} className="py-1.5 px-1 text-center">
                         <EvalGoalSelect
                           value={data[`${row.key}_${col}_eval`]}
@@ -139,7 +140,7 @@ function ThicknessModal({ title, data, onChange, onClose }) {
                     <tr className={i % 2 === 0 ? "bg-blue-50/40" : "bg-slate-100/60"}>
                       <td className="py-1.5 px-2 text-slate-500 italic pl-4">Goal</td>
                       <td></td>
-                      {THICKNESS_COLS.map((col) => (
+                      {columns.map((col) => (
                         <td key={col} className="py-1.5 px-1 text-center">
                           <EvalGoalSelect
                             value={data[`${row.key}_${col}_goal`]}

@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { getUsers, inviteUser, updateUser, syncTherapistsToUsers } from "@/lib/api-client/users";
+import { deleteUser, getUsers, inviteUser, updateUser, syncTherapistsToUsers } from "@/lib/api-client/users";
+import { useCurrentUser } from "@/components/layout/UserContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Pencil, UserPlus, RefreshCw, Link2 } from "lucide-react";
+import { Search, Pencil, UserPlus, RefreshCw, Link2, Power, Trash2 } from "lucide-react";
 import UserProfileBadge from "@/components/users/UserProfileBadge";
 import { toast } from "sonner";
 import {
@@ -18,6 +19,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const DISCIPLINE_LABELS = {
   PT: "Physical Therapy",
@@ -40,6 +50,7 @@ const USER_TYPE_OPTIONS = [
 ];
 
 export default function UserManagement() {
+  const currentUser = useCurrentUser();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -51,6 +62,9 @@ export default function UserManagement() {
   const [syncing, setSyncing] = useState(false);
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -68,12 +82,17 @@ export default function UserManagement() {
   }, [loadUsers]);
 
   const handleUpdateUser = async ({ id, data }) => {
-    const result = await updateUser({ id, data });
-    if (result.error) { toast.error(result.error); return; }
-    toast.success("User updated");
-    setEditOpen(false);
-    setEditingUser(null);
-    loadUsers();
+    try {
+      const result = await updateUser({ id, data });
+      if (result.error) { toast.error(result.error); return; }
+      toast.success("User updated");
+      setEditOpen(false);
+      setEditingUser(null);
+      await loadUsers();
+    } catch (error) {
+      console.error("Failed to update user:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update user");
+    }
   };
 
   const handleSync = async () => {
@@ -118,6 +137,7 @@ export default function UserManagement() {
   const handleEdit = (user) => {
     setEditingUser(user);
     setEditForm({
+      full_name: user.full_name || "",
       user_type: user.user_type || "therapist",
       phone: user.phone || "",
       credentials: user.credentials || "",
@@ -132,6 +152,39 @@ export default function UserManagement() {
     const roleMap = { superuser: "superuser", admin: "admin", therapist: "user", coordinator: "user", hr: "user" };
     const data = { ...editForm, role: roleMap[editForm.user_type] || editForm.user_type };
     handleUpdateUser({ id: editingUser.id, data });
+  };
+
+  const accessControlDisabled = (user) =>
+    user.id === currentUser?.id || (currentUser?.user_type === "admin" && user.user_type === "superuser");
+
+  const handleToggleAccess = async (user) => {
+    if (statusUpdatingId || accessControlDisabled(user)) return;
+    setStatusUpdatingId(user.id);
+    const nextStatus = user.access_status === "active" ? "inactive" : "active";
+    try {
+      await updateUser({ id: user.id, data: { access_status: nextStatus } });
+      toast.success(`${user.full_name || user.email} is now ${nextStatus}`);
+      await loadUsers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update access status");
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!userToDelete || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteUser(userToDelete.id);
+      toast.success(`${userToDelete.full_name || userToDelete.email} deleted`);
+      setUserToDelete(null);
+      await loadUsers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete user");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filtered = users.filter((u) => {
@@ -187,20 +240,21 @@ export default function UserManagement() {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>User Type</TableHead>
+              <TableHead>Access Status</TableHead>
               <TableHead className="hidden md:table-cell">Credentials</TableHead>
               <TableHead className="hidden md:table-cell">Discipline</TableHead>
               <TableHead className="hidden md:table-cell">Therapist Profile</TableHead>
-              <TableHead className="w-20"></TableHead>
+              <TableHead className="w-32"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-slate-400">Loading…</TableCell>
+                <TableCell colSpan={8} className="text-center py-8 text-slate-400">Loading…</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-slate-400">No users found</TableCell>
+                <TableCell colSpan={8} className="text-center py-8 text-slate-400">No users found</TableCell>
               </TableRow>
             ) : (
               filtered.map((u) => (
@@ -209,6 +263,11 @@ export default function UserManagement() {
                   <TableCell className="text-sm text-slate-500">{u.email}</TableCell>
                   <TableCell>
                     <UserProfileBadge userType={u.user_type || "therapist"} />
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${u.access_status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                      {u.access_status === "active" ? "Active" : "Inactive"}
+                    </span>
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-sm text-slate-500">{u.credentials || "—"}</TableCell>
                   <TableCell className="hidden md:table-cell text-sm text-slate-500">{DISCIPLINE_LABELS[u.discipline] || u.discipline || "—"}</TableCell>
@@ -222,9 +281,33 @@ export default function UserManagement() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(u)}>
-                      <Pencil className="w-3.5 h-3.5 text-slate-400" />
-                    </Button>
+                    <div className="flex items-center">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${u.email}`} onClick={() => handleEdit(u)}>
+                        <Pencil className="h-3.5 w-3.5 text-slate-500" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label={`${u.access_status === "active" ? "Deactivate" : "Activate"} ${u.email}`}
+                        title={u.access_status === "active" ? "Set inactive" : "Set active"}
+                        disabled={statusUpdatingId === u.id || accessControlDisabled(u)}
+                        onClick={() => handleToggleAccess(u)}
+                      >
+                        <Power className={`h-3.5 w-3.5 ${u.access_status === "active" ? "text-emerald-600" : "text-slate-400"}`} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label={`Delete ${u.email}`}
+                        title="Delete user"
+                        disabled={accessControlDisabled(u)}
+                        onClick={() => setUserToDelete(u)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -283,6 +366,10 @@ export default function UserManagement() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
+              <Label>Full Name</Label>
+              <Input value={editForm.full_name || ""} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+            </div>
+            <div>
               <Label>User Type</Label>
               <Select value={editForm.user_type} onValueChange={(v) => setEditForm({ ...editForm, user_type: v })}>
                 <SelectTrigger>
@@ -339,6 +426,24 @@ export default function UserManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(userToDelete)} onOpenChange={(open) => { if (!open && !deleting) setUserToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete user account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the login account for <strong>{userToDelete?.full_name || userToDelete?.email}</strong>. The linked therapist profile and clinical records will remain.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+              {deleting ? "Deleting…" : "Delete User"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import ReferralTherapistSearch from "./ReferralTherapistSearch";
+
 import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +13,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Save, Calendar, Search, X } from "lucide-react";
 import { getAgenciesForSelect, getPatients } from "@/lib/api-client/patients";
 import { getTherapists } from "@/lib/api-client/therapists";
+import { canAssignTherapist } from "@/lib/assignments/eligibility";
 import { toast } from "sonner";
+import FaceSheetUpload from "@/components/patients/FaceSheetUpload";
 
 const therapyTypeNames = {
   pt: "Physical Therapy",
@@ -38,43 +42,50 @@ function dateInputValue(value) {
   return value ? String(value).slice(0, 10) : "";
 }
 
+const createEmptyReferralForm = () => ({
+  first_name: "",
+  last_name: "",
+  date_of_birth: "",
+  sex: "",
+  ssn: "",
+  medicare_number: "",
+  phone: "",
+  address: "",
+  city: "",
+  state: "",
+  zip: "",
+  referral_source: "",
+  referral_date: new Date().toISOString().split("T")[0],
+  primary_diagnosis: "",
+  therapy_types: [],
+  insurance: "",
+  agency: "",
+  rate_type: "standard",
+  special_rates: {},
+  physician_name: "",
+  physician_phone: "",
+  cert_period_start: "",
+  cert_period_end: "",
+  authorization_number: "",
+  authorized_visits: "",
+  pt_eval_visits: "",
+  pt_treatment_visits: "",
+  ot_eval_visits: "",
+  ot_treatment_visits: "",
+  st_eval_visits: "",
+  st_treatment_visits: "",
+  evaluating_therapist_pt: "",
+  evaluating_therapist_ot: "",
+  evaluating_therapist_st: "",
+  treating_therapist_pt: "",
+  treating_therapist_ot: "",
+  treating_therapist_st: "",
+  notes: "",
+  face_sheet: null,
+});
+
 export default function ReferralIntakeForm({ onSave }) {
-  const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    date_of_birth: "",
-    sex: "",
-    ssn: "",
-    medicare_number: "",
-    phone: "",
-    referral_source: "",
-    referral_date: new Date().toISOString().split("T")[0],
-    primary_diagnosis: "",
-    therapy_types: [],
-    insurance: "",
-    agency: "",
-    rate_type: "standard",
-    special_rates: {},
-    physician_name: "",
-    physician_phone: "",
-    cert_period_start: "",
-    cert_period_end: "",
-    authorization_number: "",
-    authorized_visits: "",
-    pt_eval_visits: "",
-    pt_treatment_visits: "",
-    ot_eval_visits: "",
-    ot_treatment_visits: "",
-    st_eval_visits: "",
-    st_treatment_visits: "",
-    evaluating_therapist_pt: "",
-    evaluating_therapist_ot: "",
-    evaluating_therapist_st: "",
-    treating_therapist_pt: "",
-    treating_therapist_ot: "",
-    treating_therapist_st: "",
-    notes: "",
-  });
+  const [form, setForm] = useState(createEmptyReferralForm);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -90,9 +101,9 @@ export default function ReferralIntakeForm({ onSave }) {
       .catch(console.error);
   }, []);
 
-  const ptTherapists = therapists.filter(t => t.discipline === "Physical Therapy");
-  const otTherapists = therapists.filter(t => t.discipline === "Occupational Therapy");
-  const stTherapists = therapists.filter(t => t.discipline === "Speech Therapy");
+  const ptTherapists = therapists.filter(t => canAssignTherapist(t, "Physical Therapy", "evaluation"));
+  const otTherapists = therapists.filter(t => canAssignTherapist(t, "Occupational Therapy", "evaluation"));
+  const stTherapists = therapists.filter(t => canAssignTherapist(t, "Speech Therapy", "evaluation"));
 
   const filteredPatients = searchQuery
     ? patients.filter((p) =>
@@ -133,19 +144,7 @@ export default function ReferralIntakeForm({ onSave }) {
       const result = await onSave({ ...form, existing_patient_id: selectedPatientId });
       if (result?.success) {
         setSelectedPatientId(null);
-        setForm((current) => ({
-          ...current,
-          first_name: "",
-          last_name: "",
-          date_of_birth: "",
-          phone: "",
-          primary_diagnosis: "",
-          therapy_types: [],
-          agency: "",
-          cert_period_start: "",
-          cert_period_end: "",
-          notes: "",
-        }));
+        setForm(createEmptyReferralForm());
       }
     } finally {
       setSaving(false);
@@ -160,6 +159,10 @@ export default function ReferralIntakeForm({ onSave }) {
       last_name: patient.last_name || "",
       date_of_birth: dateInputValue(patient.date_of_birth),
       phone: patient.phone || "",
+      address: patient.address || "",
+      city: patient.city || "",
+      state: patient.state || "",
+      zip: patient.zip || "",
       primary_diagnosis: patient.diagnoses?.[0]?.diagnosis || "",
       therapy_types: normalizeTherapyTypes(patient.therapy_types),
       insurance: patient.insurance || "",
@@ -168,6 +171,18 @@ export default function ReferralIntakeForm({ onSave }) {
       cert_period_end: dateInputValue(patient.cert_period_end),
       authorization_number: patient.authorization_number || "",
       authorized_visits: patient.authorized_visits || "",
+      pt_eval_visits: patient.pt_eval_visits ?? "",
+      pt_treatment_visits: patient.pt_treatment_visits ?? "",
+      ot_eval_visits: patient.ot_eval_visits ?? "",
+      ot_treatment_visits: patient.ot_treatment_visits ?? "",
+      st_eval_visits: patient.st_eval_visits ?? "",
+      st_treatment_visits: patient.st_treatment_visits ?? "",
+      evaluating_therapist_pt: patient.evaluating_therapist_pt || "",
+      evaluating_therapist_ot: patient.evaluating_therapist_ot || "",
+      evaluating_therapist_st: patient.evaluating_therapist_st || "",
+      treating_therapist_pt: patient.treating_therapist_pt || "",
+      treating_therapist_ot: patient.treating_therapist_ot || "",
+      treating_therapist_st: patient.treating_therapist_st || "",
       notes: patient.notes || "",
     }));
     setSearchQuery("");
@@ -308,23 +323,25 @@ export default function ReferralIntakeForm({ onSave }) {
             </div>
           </div>
 
-          <div className={`rounded-lg border p-3 ${form.therapy_types.length === 0 ? "border-red-300 bg-red-50/40" : "border-transparent"}`}>
-            <Label className="text-red-700">Therapy Types <span aria-hidden="true">*</span></Label>
-            <div className="flex gap-6 mt-2">
-              {["Physical Therapy", "Occupational Therapy", "Speech Therapy"].map((type) => (
-                <div key={type} className="flex items-center gap-2">
-                  <Checkbox
-                    id={type}
-                    checked={form.therapy_types.includes(type)}
-                    onCheckedChange={() => toggleTherapyType(type)}
-                  />
-                  <label htmlFor={type} className="text-sm cursor-pointer">
-                    {type}
-                  </label>
-                </div>
-              ))}
+          <ReferralTherapistSearch form={form} onChange={set}>
+            <div className={`rounded-lg border p-3 ${form.therapy_types.length === 0 ? "border-red-300 bg-red-50/40" : "border-transparent"}`}>
+              <Label className="text-red-700">Therapy Types <span aria-hidden="true">*</span></Label>
+              <div className="flex gap-6 mt-2">
+                {["Physical Therapy", "Occupational Therapy", "Speech Therapy"].map((type) => (
+                  <div key={type} className="flex items-center gap-2">
+                    <Checkbox
+                      id={type}
+                      checked={form.therapy_types.includes(type)}
+                      onCheckedChange={() => toggleTherapyType(type)}
+                    />
+                    <label htmlFor={type} className="text-sm cursor-pointer">
+                      {type}
+                    </label>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </ReferralTherapistSearch>
 
           <div className="border rounded-lg p-4 space-y-4 bg-slate-50">
             <Label className="text-base font-semibold">Therapy Orders</Label>
@@ -377,7 +394,7 @@ export default function ReferralIntakeForm({ onSave }) {
                       <SelectValue placeholder="Select PT" />
                     </SelectTrigger>
                     <SelectContent>
-                      {ptTherapists.map((t) => (
+                      {therapists.filter((t) => ptTherapists.includes(t) || t.full_name === form.treating_therapist_pt).map((t) => (
                         <SelectItem key={t.id} value={t.full_name}>
                           {t.full_name} {t.credentials && `(${t.credentials})`}
                         </SelectItem>
@@ -436,7 +453,7 @@ export default function ReferralIntakeForm({ onSave }) {
                       <SelectValue placeholder="Select OT" />
                     </SelectTrigger>
                     <SelectContent>
-                      {otTherapists.map((t) => (
+                      {therapists.filter((t) => otTherapists.includes(t) || t.full_name === form.treating_therapist_ot).map((t) => (
                         <SelectItem key={t.id} value={t.full_name}>
                           {t.full_name} {t.credentials && `(${t.credentials})`}
                         </SelectItem>
@@ -495,7 +512,7 @@ export default function ReferralIntakeForm({ onSave }) {
                       <SelectValue placeholder="Select ST" />
                     </SelectTrigger>
                     <SelectContent>
-                      {stTherapists.map((t) => (
+                      {therapists.filter((t) => stTherapists.includes(t) || t.full_name === form.treating_therapist_st).map((t) => (
                         <SelectItem key={t.id} value={t.full_name}>
                           {t.full_name} {t.credentials && `(${t.credentials})`}
                         </SelectItem>
@@ -597,6 +614,11 @@ export default function ReferralIntakeForm({ onSave }) {
           <div>
             <Label>Notes</Label>
             <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={4} placeholder="Additional referral information, special considerations..." />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Face Sheet</Label>
+            <FaceSheetUpload value={form.face_sheet} onChange={(value) => set("face_sheet", value)} disabled={saving} />
           </div>
 
           <div className="flex justify-end">

@@ -21,6 +21,7 @@ const ALL_NAV_PAGES = [
   { key: "VisitNotes", label: "Visit Notes" },
   { key: "VisitCalendar", label: "Visit Calendar" },
   { key: "Agencies", label: "Agencies" },
+  { key: "Payers", label: "Payers Management" },
   { key: "Invoices", label: "Billing" },
   { key: "Payroll", label: "Payroll" },
   { key: "Reports", label: "Reports" },
@@ -46,7 +47,7 @@ const ROLES = [
 
 // Default permissions if none configured
 const DEFAULT_PERMISSIONS = {
-  admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
+  admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Payers", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
   therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation"],
   coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
   hr: ["Dashboard", "Therapists", "CompanyInformation"],

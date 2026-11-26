@@ -1,7 +1,7 @@
 import { apiUrl, handleResponse } from "./_fetch";
 
-export async function getAgencies() {
-  const res = await fetch(apiUrl("/api/v1/agencies"));
+export async function getAgencies(includeInactive = false) {
+  const res = await fetch(apiUrl(includeInactive ? "/api/v1/agencies?includeInactive=true" : "/api/v1/agencies"));
   return handleResponse(res);
 }
 

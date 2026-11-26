@@ -1,5 +1,6 @@
 "use client";
 
+import AgencyPreferencesDialog from "@/components/agencies/AgencyPreferencesDialog";
 import React, { useState, useEffect, useCallback } from "react";
 import { getAgencies, createAgency, updateAgency, deleteAgency } from "@/lib/api-client/agencies";
 import { toast } from "sonner";
@@ -9,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Pencil, Trash2, List, Plus, FileText } from "lucide-react";
+import { Search, Pencil, Settings, Trash2, List, Plus, FileText } from "lucide-react";
 import AgencyDocumentationSetup from "@/components/agencies/AgencyDocumentationSetup";
 import AgencyForm from "@/components/agencies/AgencyForm";
 
@@ -21,6 +22,7 @@ const statusBadge = {
 export default function Agencies() {
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [preferencesAgency, setPreferencesAgency] = useState(null);
   const [editing, setEditing] = useState(null);
 
   const [agencies, setAgencies] = useState([]);
@@ -28,7 +30,7 @@ export default function Agencies() {
 
   const loadAgencies = useCallback(async () => {
     try {
-      const data = await getAgencies();
+      const data = await getAgencies(true);
       setAgencies(data);
     } catch (err) {
       console.error(err);
@@ -154,6 +156,9 @@ export default function Agencies() {
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(a)}>
                           <Pencil className="w-3.5 h-3.5 text-slate-400" />
                         </Button>
+                        <Button variant="ghost" size="icon" aria-label="Other Agency Preferences" onClick={() => setPreferencesAgency(a)}>
+                          <Settings className="w-4 h-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(a.id)}>
                           <Trash2 className="w-3.5 h-3.5 text-red-400" />
                         </Button>
@@ -184,6 +189,7 @@ export default function Agencies() {
       </Tabs>
 
       {formOpen && <AgencyForm open={formOpen} onClose={() => setFormOpen(false)} onSave={(d) => handleCreate(d)} />}
+      {preferencesAgency && <AgencyPreferencesDialog agency={preferencesAgency} onClose={() => setPreferencesAgency(null)} onSaved={() => { setPreferencesAgency(null); loadAgencies(); }} />}
       {editing && <AgencyForm open={!!editing} onClose={() => setEditing(null)} onSave={(d) => handleUpdate({ id: editing.id, data: d })} initial={editing} />}
     </div>
   );

@@ -27,6 +27,8 @@ import {
   Shield,
   Clock,
   Settings,
+  KeyRound,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AnnouncementBar from "./AnnouncementBar";
@@ -34,17 +36,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { getUsersForSelect } from "@/lib/api-client/tasks";
 import { getCompanyInfo } from "@/lib/api-client/company-info";
+import ChangePasswordDialog from "@/components/auth/ChangePasswordDialog";
 
 const BASE44_MENU_PERMISSIONS = {
-  admin: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
+  admin: ["Dashboard", "Communications", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "Agencies", "Payers", "Invoices", "Payroll", "Reports", "CompanyInformation", "TaskAssignment", "Orders", "DocumentLibrary", "UserManagement", "CompanySettings", "AuditLogs"],
   therapist: ["Dashboard", "MySchedule", "MyTasks", "MyProfile", "MyPatients", "VisitNotes", "CompanyInformation", "WeeklyClose"],
-  coordinator: ["Dashboard", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
+  coordinator: ["Dashboard", "Communications", "Patients", "Therapists", "VisitNotes", "VisitCalendar", "CompanyInformation", "TaskAssignment", "DocumentLibrary", "CoordinatorTasks", "MyLabor"],
   hr: ["Dashboard", "Therapists", "CompanyInformation"],
   guest: [],
   client: [],
 };
 
 const NAV = [
+  { name: "Communications", icon: ClipboardList, page: "Communications", href: "/Communications" },
   { name: "Dashboard", icon: LayoutDashboard, page: "Dashboard", href: "/" },
   { name: "My Schedule", icon: CalendarDays, page: "MySchedule", href: "/MySchedule" },
   { name: "User Administration", icon: UserCog, page: "UserManagement", href: "/UserManagement" },
@@ -58,6 +62,7 @@ const NAV = [
   { name: "Visit Notes", icon: FileText, page: "VisitNotes", href: "/VisitNotes" },
   { name: "Visit Calendar", icon: CalendarDays, page: "VisitCalendar", href: "/VisitCalendar" },
   { name: "Agencies", icon: Activity, page: "Agencies", href: "/Agencies" },
+  { name: "Payers Management", icon: Landmark, page: "Payers", href: "/Payers" },
   { name: "Invoices", icon: Receipt, page: "AgencyInvoices", href: "/Invoices?view=agency" },
   { name: "Billing", icon: Receipt, page: "Invoices", href: "/Invoices", submenu: [
     "Invoice Manager",
@@ -103,6 +108,7 @@ export default function Layout({ children, user }) {
   const [impersonatedUser, setImpersonatedUser] = useState(null);
   const [impersonationUsers, setImpersonationUsers] = useState([]);
   const [impersonationSearch, setImpersonationSearch] = useState("");
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [menuPermissions, setMenuPermissions] = useState(BASE44_MENU_PERMISSIONS);
 
   useEffect(() => {
@@ -110,6 +116,17 @@ export default function Layout({ children, user }) {
       getUsersForSelect().then(setImpersonationUsers).catch(() => setImpersonationUsers([]));
     }
   }, [user?.user_type]);
+
+  const openImpersonationDialog = async () => {
+    setImpersonateOpen(true);
+    // Layout remains mounted while therapist records are created elsewhere.
+    // Refresh here so new active therapists appear without a hard reload.
+    try {
+      setImpersonationUsers(await getUsersForSelect());
+    } catch {
+      setImpersonationUsers([]);
+    }
+  };
 
   useEffect(() => {
     getCompanyInfo()
@@ -238,7 +255,7 @@ export default function Layout({ children, user }) {
       {/* Sign Out */}
       <div className="px-3 pb-3 border-t border-slate-100 pt-3">
         {user?.user_type === "superuser" && (
-          <Button variant="outline" className="mb-2 w-full justify-start gap-3" onClick={() => setImpersonateOpen(true)}>
+          <Button variant="outline" className="mb-2 w-full justify-start gap-3" onClick={openImpersonationDialog}>
             <Users className="h-[18px] w-[18px]" />
             {impersonatedUser ? "Change Impersonation" : "Impersonate User"}
           </Button>
@@ -248,6 +265,10 @@ export default function Layout({ children, user }) {
             Return to Superuser
           </Button>
         )}
+        <Button variant="ghost" className="mb-1 w-full justify-start gap-3 text-slate-500" onClick={() => setChangePasswordOpen(true)}>
+          <KeyRound className="h-[18px] w-[18px]" />
+          Change Password
+        </Button>
         <button
           onClick={() => signOutAction()}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all"
@@ -282,6 +303,7 @@ export default function Layout({ children, user }) {
           </div>
         </DialogContent>
       </Dialog>
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
       {/* Desktop sidebar */}
       <aside className="hidden lg:block w-60 shrink-0 fixed inset-y-0 left-0 z-30">
         <SidebarContent />

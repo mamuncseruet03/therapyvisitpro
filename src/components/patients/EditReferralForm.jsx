@@ -1,5 +1,7 @@
 "use client";
 
+import ReferralTherapistSearch from "./ReferralTherapistSearch";
+
 import React, { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Edit, X } from "lucide-react";
 import { getAgenciesForSelect } from "@/lib/api-client/patients";
 import { getReferrals } from "@/lib/api-client/referrals";
+import { getTherapists } from "@/lib/api-client/therapists";
+import { canAssignTherapist } from "@/lib/assignments/eligibility";
+import FaceSheetUpload from "@/components/patients/FaceSheetUpload";
 
 const therapyTypeNames = {
   pt: "Physical Therapy",
@@ -33,6 +38,39 @@ function normalizeTherapyTypes(types) {
   return [...new Set(types.map((type) => therapyTypeNames[String(type).trim().toLowerCase()] || type))];
 }
 
+function TherapistSelectors({ therapists, allTherapists, evaluatingValue, treatingValue, onEvaluatingChange, onTreatingChange, placeholder }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <Label className="text-xs text-slate-600">Evaluating Therapist</Label>
+        <Select value={evaluatingValue || ""} onValueChange={onEvaluatingChange}>
+          <SelectTrigger className="h-9"><SelectValue placeholder={placeholder} /></SelectTrigger>
+          <SelectContent>
+            {therapists.map((therapist) => (
+              <SelectItem key={therapist.id} value={therapist.full_name}>
+                {therapist.full_name} {therapist.credentials && `(${therapist.credentials})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="text-xs text-slate-600">Treating Therapist</Label>
+        <Select value={treatingValue || ""} onValueChange={onTreatingChange}>
+          <SelectTrigger className="h-9"><SelectValue placeholder={placeholder} /></SelectTrigger>
+          <SelectContent>
+            {allTherapists.filter((therapist) => therapists.includes(therapist) || therapist.full_name === treatingValue).map((therapist) => (
+              <SelectItem key={therapist.id} value={therapist.full_name}>
+                {therapist.full_name} {therapist.credentials && `(${therapist.credentials})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
 export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedReferral, setSelectedReferral] = useState(null);
@@ -41,12 +79,17 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
 
   const [agencies, setAgencies] = useState([]);
   const [referrals, setReferrals] = useState([]);
+  const [therapists, setTherapists] = useState([]);
 
   useEffect(() => {
-    Promise.all([getAgenciesForSelect(), getReferrals()])
-      .then(([a, r]) => { setAgencies(a); setReferrals(r); })
+    Promise.all([getAgenciesForSelect(), getReferrals(), getTherapists()])
+      .then(([a, r, t]) => { setAgencies(a); setReferrals(r); setTherapists(t); })
       .catch(console.error);
   }, []);
+
+  const ptTherapists = therapists.filter(t => canAssignTherapist(t, "Physical Therapy", "evaluation"));
+  const otTherapists = therapists.filter(t => canAssignTherapist(t, "Occupational Therapy", "evaluation"));
+  const stTherapists = therapists.filter(t => canAssignTherapist(t, "Speech Therapy", "evaluation"));
 
   const selectReferral = useCallback((referral) => {
     setSelectedReferral(referral);
@@ -187,10 +230,6 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
                 <Label>Phone</Label>
                 <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
               </div>
-              <div>
-                <Label>City</Label>
-                <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
-              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -204,23 +243,25 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
               </div>
             </div>
 
-            <div>
-              <Label>Therapy Types *</Label>
-              <div className="flex gap-6 mt-2">
-                {["Physical Therapy", "Occupational Therapy", "Speech Therapy"].map((type) => (
-                  <div key={type} className="flex items-center gap-2">
-                    <Checkbox
-                      id={type}
-                      checked={form.therapy_types.includes(type)}
-                      onCheckedChange={() => toggleTherapyType(type)}
-                    />
-                    <label htmlFor={type} className="text-sm cursor-pointer">
-                      {type}
-                    </label>
-                  </div>
-                ))}
+            <ReferralTherapistSearch form={form} onChange={set}>
+              <div>
+                <Label>Therapy Types *</Label>
+                <div className="flex gap-6 mt-2">
+                  {["Physical Therapy", "Occupational Therapy", "Speech Therapy"].map((type) => (
+                    <div key={type} className="flex items-center gap-2">
+                      <Checkbox
+                        id={type}
+                        checked={form.therapy_types.includes(type)}
+                        onCheckedChange={() => toggleTherapyType(type)}
+                      />
+                      <label htmlFor={type} className="text-sm cursor-pointer">
+                        {type}
+                      </label>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            </ReferralTherapistSearch>
 
             <div className="border rounded-lg p-4 space-y-4 bg-slate-50">
               <Label className="text-base font-semibold">Therapy Orders</Label>
@@ -249,6 +290,15 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
                     />
                   </div>
                 </div>
+                <TherapistSelectors
+                  allTherapists={therapists}
+                  therapists={ptTherapists}
+                  evaluatingValue={form.evaluating_therapist_pt}
+                  treatingValue={form.treating_therapist_pt}
+                  onEvaluatingChange={(value) => set("evaluating_therapist_pt", value)}
+                  onTreatingChange={(value) => set("treating_therapist_pt", value)}
+                  placeholder="Select PT"
+                />
               </div>
 
               <div className="space-y-3">
@@ -275,6 +325,15 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
                     />
                   </div>
                 </div>
+                <TherapistSelectors
+                  allTherapists={therapists}
+                  therapists={otTherapists}
+                  evaluatingValue={form.evaluating_therapist_ot}
+                  treatingValue={form.treating_therapist_ot}
+                  onEvaluatingChange={(value) => set("evaluating_therapist_ot", value)}
+                  onTreatingChange={(value) => set("treating_therapist_ot", value)}
+                  placeholder="Select OT"
+                />
               </div>
 
               <div className="space-y-3">
@@ -301,6 +360,15 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
                     />
                   </div>
                 </div>
+                <TherapistSelectors
+                  allTherapists={therapists}
+                  therapists={stTherapists}
+                  evaluatingValue={form.evaluating_therapist_st}
+                  treatingValue={form.treating_therapist_st}
+                  onEvaluatingChange={(value) => set("evaluating_therapist_st", value)}
+                  onTreatingChange={(value) => set("treating_therapist_st", value)}
+                  placeholder="Select ST"
+                />
               </div>
             </div>
 
@@ -341,6 +409,11 @@ export default function EditReferralForm({ onUpdate, preselectedReferralId }) {
             <div>
               <Label>Notes</Label>
               <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={4} placeholder="Additional referral information..." />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Face Sheet</Label>
+              <FaceSheetUpload value={form.face_sheet} onChange={(value) => set("face_sheet", value)} disabled={saving} />
             </div>
 
             <div className="flex justify-end gap-3">

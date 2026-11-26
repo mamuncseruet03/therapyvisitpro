@@ -4,7 +4,6 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DictationTextarea } from "./DictationButton";
 
 const PT_OT_ITEMS = [
@@ -21,7 +20,6 @@ const SLP_ITEMS = [
   "Apraxia Treatment", "Fluency Treatment", "AAC Training",
 ];
 
-const MINUTES_OPTIONS = ["", "5", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90"];
 
 export default function TreatmentRenderedSection({ treatmentRendered = {}, onChange, therapyType }) {
   const isSLP = therapyType === "Speech Therapy";
@@ -52,8 +50,7 @@ export default function TreatmentRenderedSection({ treatmentRendered = {}, onCha
               <tr className="bg-slate-100 border-b">
                 <th className="text-left py-2 px-3 font-semibold text-slate-700 w-48">Treatment</th>
                 <th className="text-center py-2 px-2 font-semibold text-slate-700 w-14">Done</th>
-                <th className="text-center py-2 px-2 font-semibold text-slate-700 w-24">Minutes</th>
-                {!isSLP && <th className="text-left py-2 px-2 font-semibold text-slate-700">Description</th>}
+                <th className="text-left py-2 px-2 font-semibold text-slate-700">Description</th>
               </tr>
             </thead>
             <tbody>
@@ -66,21 +63,9 @@ export default function TreatmentRenderedSection({ treatmentRendered = {}, onCha
                     <td className="py-2 px-2 text-center">
                       <input type="checkbox" checked={!!row.done} onChange={(e) => setItem(key, "done", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer" />
                     </td>
-                    <td className="py-2 px-2 text-center">
-                      <Select value={row.minutes || ""} onValueChange={(v) => setItem(key, "minutes", v === "__none__" ? "" : v)}>
-                        <SelectTrigger className="h-7 w-20 text-xs px-1"><SelectValue placeholder="--" /></SelectTrigger>
-                        <SelectContent>
-                          {MINUTES_OPTIONS.map((m) => (
-                            <SelectItem key={m || "__none__"} value={m || "__none__"}>{m || "--"}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    {!isSLP && (
-                      <td className="py-2 px-2">
+                    <td className="py-2 px-2">
                         <Input value={row.description || ""} onChange={(e) => setItem(key, "description", e.target.value)} placeholder="Description..." className="h-7 text-xs" />
-                      </td>
-                    )}
+                    </td>
                   </tr>
                 );
               })}

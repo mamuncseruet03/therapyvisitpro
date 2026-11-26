@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { getAgencies, createAgency } from "@/app/(app)/Agencies/actions";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const agencies = await getAgencies();
+    const agencies = await getAgencies(request.nextUrl.searchParams.get("includeInactive") === "true");
     return apiSuccess(agencies);
   } catch (err) {
     return handleApiError(err);

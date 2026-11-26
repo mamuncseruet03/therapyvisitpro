@@ -1,5 +1,7 @@
 "use client";
 
+import DeletePatientDialog from "@/components/patients/DeletePatientDialog";
+
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCurrentUser } from "@/components/layout/UserContext";
@@ -19,6 +21,7 @@ const statusBadge = {
 };
 
 export default function MyPatients() {
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [allPatients, setAllPatients] = useState([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
@@ -151,12 +154,14 @@ export default function MyPatients() {
                 <TableCell className="hidden md:table-cell text-sm text-slate-500">{p.agency || "—"}</TableCell>
                 <TableCell>
                   <Badge className={`text-xs ${statusBadge[p.status] || ""}`}>{p.status}</Badge>
+                  <button type="button" className="ml-3 text-xs text-red-700" onClick={() => setDeleteTarget(p)}>Request deletion</button>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+      {deleteTarget && <DeletePatientDialog patient={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockAuthFn = vi.fn();
+const mockFindUser = vi.fn();
 
 vi.mock("./config", () => ({
   auth: (...args: unknown[]) => {
@@ -9,11 +10,19 @@ vi.mock("./config", () => ({
   },
 }));
 
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    user: { findUnique: (...args: unknown[]) => mockFindUser(...args) },
+    apiKey: { findUnique: vi.fn(), update: vi.fn() },
+  },
+}));
+
 import { getCurrentUser, requireAuth, requireRole } from "./session";
 
 describe("session utilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindUser.mockResolvedValue({ isActive: true });
   });
 
   describe("getCurrentUser", () => {
@@ -38,6 +47,24 @@ describe("session utilities", () => {
 
       const user = await getCurrentUser();
       expect(user).toBeNull();
+    });
+
+    it("returns null when the account is inactive", async () => {
+      mockAuthFn.mockResolvedValue({
+        user: {
+          id: "user-1",
+          email: "inactive@test.com",
+          name: "Inactive",
+          role: "USER",
+          userType: "THERAPIST",
+          therapistId: "t-1",
+          discipline: "PT",
+        },
+        expires: "",
+      });
+      mockFindUser.mockResolvedValue({ isActive: false });
+
+      await expect(getCurrentUser()).resolves.toBeNull();
     });
   });
 

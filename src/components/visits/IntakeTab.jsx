@@ -15,20 +15,25 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
   const [punchingIn, setPunchingIn] = useState(false);
   const [unableToPunchIn, setUnableToPunchIn] = useState(false);
   const [manualTimeIn, setManualTimeIn] = useState("");
-  const [diagnosisInput, setDiagnosisInput] = useState("");
-  const [icd10Input, setIcd10Input] = useState("");
-  const [treatmentDiagnosisInput, setTreatmentDiagnosisInput] = useState("");
-  const [treatmentIcd10Input, setTreatmentIcd10Input] = useState("");
+  // Keep unfinished diagnosis inputs in the parent form.  These used to be
+  // local component state, so switching tabs/reloading before pressing +
+  // silently discarded what the therapist had typed.
+  const diagnosisInput = form.medical_diagnosis_draft || "";
+  const icd10Input = form.medical_diagnosis_icd10_draft || "";
+  const treatmentDiagnosisInput = form.treatment_diagnosis_draft || "";
+  const treatmentIcd10Input = form.treatment_diagnosis_icd10_draft || "";
 
   const addDiagnosis = () => {
     if (!diagnosisInput.trim()) return;
     set("medical_diagnoses", [...(form.medical_diagnoses || []), { diagnosis: diagnosisInput.trim(), icd10_code: icd10Input.trim() }]);
-    setDiagnosisInput(""); setIcd10Input("");
+    set("medical_diagnosis_draft", "");
+    set("medical_diagnosis_icd10_draft", "");
   };
   const addTreatmentDiagnosis = () => {
     if (!treatmentDiagnosisInput.trim()) return;
     set("treatment_diagnoses", [...(form.treatment_diagnoses || []), { diagnosis: treatmentDiagnosisInput.trim(), icd10_code: treatmentIcd10Input.trim() }]);
-    setTreatmentDiagnosisInput(""); setTreatmentIcd10Input("");
+    set("treatment_diagnosis_draft", "");
+    set("treatment_diagnosis_icd10_draft", "");
   };
 
   return (
@@ -167,8 +172,8 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
                         if (timeIn && form.time_out) {
                           const [inH, inM] = timeIn.split(":").map(Number);
                           const [outH, outM] = form.time_out.split(":").map(Number);
-                          const dur = (outH * 60 + outM) - (inH * 60 + inM);
-                          if (dur > 0) set("duration_minutes", dur);
+                          const rawDuration = (outH * 60 + outM) - (inH * 60 + inM);
+                          set("duration_minutes", rawDuration >= 0 ? rawDuration : rawDuration + 24 * 60);
                         }
                         if (typeof navigator !== "undefined" && navigator.geolocation) {
                           navigator.geolocation.getCurrentPosition(
@@ -198,8 +203,8 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
                             if (manualTimeIn && form.time_out) {
                               const [inH, inM] = manualTimeIn.split(":").map(Number);
                               const [outH, outM] = form.time_out.split(":").map(Number);
-                              const dur = (outH * 60 + outM) - (inH * 60 + inM);
-                              if (dur > 0) set("duration_minutes", dur);
+                              const rawDuration = (outH * 60 + outM) - (inH * 60 + inM);
+                              set("duration_minutes", rawDuration >= 0 ? rawDuration : rawDuration + 24 * 60);
                             }
                             setUnableToPunchIn(false);
                           }}>
@@ -236,7 +241,7 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
             </div>
             <div>
               <Label>Duration (min)</Label>
-              <Input type="number" value={form.duration_minutes || ""} readOnly className="bg-slate-50 text-slate-600" placeholder="Auto-calculated" />
+              <Input type="number" value={form.duration_minutes ?? ""} readOnly className="bg-slate-50 text-slate-600" placeholder="Auto-calculated" />
             </div>
           </div>
           <div>
@@ -273,8 +278,8 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
             <Label>Medical Diagnosis</Label>
             <div className="space-y-2">
               <div className="grid grid-cols-[2fr_1fr_auto] gap-2">
-                <Input placeholder="Enter diagnosis..." value={diagnosisInput} onChange={(e) => setDiagnosisInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
-                <Input placeholder="ICD-10 code" value={icd10Input} onChange={(e) => setIcd10Input(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
+                <Input placeholder="Enter diagnosis..." value={diagnosisInput} onChange={(e) => set("medical_diagnosis_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
+                <Input placeholder="ICD-10 code" value={icd10Input} onChange={(e) => set("medical_diagnosis_icd10_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
                 <Button type="button" size="icon" variant="outline" onClick={addDiagnosis}><Plus className="w-4 h-4" /></Button>
               </div>
               {form.medical_diagnoses?.length > 0 && (
@@ -294,8 +299,8 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
             <Label>Treatment Diagnosis</Label>
             <div className="space-y-2">
               <div className="grid grid-cols-[2fr_1fr_auto] gap-2">
-                <Input placeholder="Enter treatment diagnosis..." value={treatmentDiagnosisInput} onChange={(e) => setTreatmentDiagnosisInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
-                <Input placeholder="ICD-10 code" value={treatmentIcd10Input} onChange={(e) => setTreatmentIcd10Input(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
+                <Input placeholder="Enter treatment diagnosis..." value={treatmentDiagnosisInput} onChange={(e) => set("treatment_diagnosis_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
+                <Input placeholder="ICD-10 code" value={treatmentIcd10Input} onChange={(e) => set("treatment_diagnosis_icd10_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
                 <Button type="button" size="icon" variant="outline" onClick={addTreatmentDiagnosis}><Plus className="w-4 h-4" /></Button>
               </div>
               {form.treatment_diagnoses?.length > 0 && (

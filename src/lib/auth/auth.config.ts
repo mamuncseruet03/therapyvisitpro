@@ -5,7 +5,10 @@ import { hasApiAccessByPath, hasRouteAccessByPath } from "@/lib/rbac/permissions
 export const authConfig = {
   session: {
     strategy: "jwt",
-    maxAge: 60 * 60,
+    // Evaluations can take several hours. A one-hour session expired while a
+    // therapist was documenting, causing every autosave/Next request to return
+    // 401 and putting the in-progress note at risk.
+    maxAge: 12 * 60 * 60,
   },
   pages: {
     signIn: "/login",
@@ -39,11 +42,17 @@ export const authConfig = {
     async authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
       const pathname = request.nextUrl.pathname;
-      const isAuthPage = pathname.startsWith("/login");
+      const isAuthPage = ["/login", "/forgot-password", "/reset-password"].some(
+        (route) => pathname === route || pathname.startsWith(`${route}/`),
+      );
       const isApiRoute = pathname.startsWith("/api/v1/");
-      const isLoginApi = pathname === "/api/v1/auth/login";
+      const isPublicAuthApi = [
+        "/api/v1/auth/login",
+        "/api/v1/auth/forgot-password",
+        "/api/v1/auth/reset-password",
+      ].includes(pathname);
 
-      if (isLoginApi) return true;
+      if (isPublicAuthApi) return true;
 
       if (isAuthPage) {
         if (isLoggedIn) return Response.redirect(new URL("/", request.nextUrl));
@@ -55,6 +64,10 @@ export const authConfig = {
           ? Response.json({ error: "Unauthorized" }, { status: 401 })
           : false;
       }
+
+      // The upload handler checks the active session before accepting files.
+      if (pathname === "/api/upload" && request.method === "POST") return true;
+      if (pathname.startsWith("/uploads/") && ["GET", "HEAD"].includes(request.method)) return true;
 
       const userType = auth.user.userType;
       const allowed = isApiRoute

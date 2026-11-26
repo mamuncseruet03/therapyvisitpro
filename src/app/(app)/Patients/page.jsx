@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useCurrentUser } from "@/components/layout/UserContext";
-import { getPatients, createPatient, updatePatient } from "@/lib/api-client/patients";
+import { getPatients, getPatientById, createPatient, updatePatient } from "@/lib/api-client/patients";
 import { getCalendarVisits } from "@/lib/api-client/calendar";
 import { createReferral, updateReferral, getAssignments } from "@/lib/api-client/referrals";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ export default function Patients() {
   const currentUser = useCurrentUser();
   const [allPatients, setAllPatients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasMounted, setHasMounted] = useState(false);
 
   const isAdmin = ["admin", "superuser", "coordinator"].includes(currentUser?.user_type) || ["admin", "superuser", "coordinator"].includes(currentUser?.role);
   const isTherapist = !isAdmin;
@@ -64,6 +65,7 @@ export default function Patients() {
   }, []);
 
   useEffect(() => { loadPatients(); }, [loadPatients]);
+  useEffect(() => { setHasMounted(true); }, []);
 
   const patients = React.useMemo(() => {
     if (isTherapist) {
@@ -86,8 +88,12 @@ export default function Patients() {
         loadPatients();
         return result;
       }
+      throw new Error(result?.error || "Failed to create patient");
     } catch (err) {
-      toast.error("Failed to create patient");
+      const message = err instanceof Error ? err.message : "Failed to create patient";
+      console.error("Failed to create patient:", err);
+      toast.error(message);
+      return { success: false, error: message };
     }
   };
 
@@ -183,6 +189,18 @@ export default function Patients() {
         cert_period_end: data.cert_period_end,
         authorization_number: data.authorization_number,
         authorized_visits: data.authorized_visits ? parseInt(data.authorized_visits) : null,
+        pt_eval_visits: data.pt_eval_visits,
+        pt_treatment_visits: data.pt_treatment_visits,
+        ot_eval_visits: data.ot_eval_visits,
+        ot_treatment_visits: data.ot_treatment_visits,
+        st_eval_visits: data.st_eval_visits,
+        st_treatment_visits: data.st_treatment_visits,
+        evaluating_therapist_pt: data.evaluating_therapist_pt,
+        treating_therapist_pt: data.treating_therapist_pt,
+        evaluating_therapist_ot: data.evaluating_therapist_ot,
+        treating_therapist_ot: data.treating_therapist_ot,
+        evaluating_therapist_st: data.evaluating_therapist_st,
+        treating_therapist_st: data.treating_therapist_st,
         notes: data.notes,
         source_type: sourceType,
         patient_id: patientId,
@@ -200,7 +218,21 @@ export default function Patients() {
       const explicitlySelected = data.existing_patient_id
         ? allPatients.find((patient) => patient.id === data.existing_patient_id)
         : null;
-      const existing = explicitlySelected || findExisting(data);
+      let existing = explicitlySelected || findExisting(data);
+      if (existing) {
+        try {
+          await getPatientById(existing.id);
+        } catch (error) {
+          // The list can be stale when a test patient is removed in another tab.
+          // Treat a missing record as a new referral instead of PATCHing a
+          // deleted patient and surfacing a generic server error.
+          if (error instanceof Error && /not found/i.test(error.message)) {
+            existing = null;
+          } else {
+            throw error;
+          }
+        }
+      }
       const patientData = buildPatientData(data);
       let patientId;
       let patientAction;
@@ -301,6 +333,10 @@ export default function Patients() {
     }
   };
 
+  if (!hasMounted) {
+    return <div className="min-h-24" aria-hidden="true" />;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -335,7 +371,7 @@ export default function Patients() {
 
         <TabsContent value="list" className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-            <div className="relative max-w-sm flex-1">
+            <div suppressHydrationWarning className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input placeholder="Search patients…" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
@@ -392,8 +428,8 @@ export default function Patients() {
                     <TableCell className="hidden md:table-cell text-sm text-slate-500">{p.city || "—"}</TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <div className="flex gap-1 flex-wrap">
-                        {(p.therapy_types || []).map((t) => (
-                          <Badge key={t} variant="outline" className="text-xs">
+                         {(p.therapy_types || []).map((t, index) => (
+                           <Badge key={`${p.id}-${t}-${index}`} variant="outline" className="text-xs">
                             {{ physical_therapy: "Physical", occupational_therapy: "Occupational", speech_therapy: "Speech" }[t] || t.replace(" Therapy", "")}
                           </Badge>
                         ))}
@@ -467,20 +503,20 @@ export default function Patients() {
 
       </Tabs>
 
-      {formOpen && !editing && <PatientForm open={formOpen} onClose={() => setFormOpen(false)} onSave={(d) => handleCreate(d)} />}
-      {editing && (
+      {(formOpen || editing) && (
         <PatientForm
-          key={editing.id}
+          key={editing?.id || "new"}
           open
           initial={editing}
-          onClose={() => setEditing(null)}
-          onSave={(data) => handleUpdate({ id: editing.id, data })}
+          onClose={() => { setEditing(null); setFormOpen(false); }}
+          onSave={(data) => editing ? handleUpdate({ id: editing.id, data }) : handleCreate(data)}
         />
       )}
       {deleteTarget && (
         <DeletePatientDialog
           patient={deleteTarget}
           currentUser={currentUser}
+          onDeleted={loadPatients}
           onClose={() => setDeleteTarget(null)}
         />
       )}

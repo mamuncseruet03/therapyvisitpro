@@ -23,6 +23,20 @@ export async function updateUser({ id, data }: { id: string; data: unknown }) {
   return handleResponse(res);
 }
 
+export async function deleteUser(id: string) {
+  const res = await fetch(apiUrl(`/api/v1/users/${id}`), { method: "DELETE" });
+  return handleResponse(res);
+}
+
+export async function changeCurrentUserPassword(data: { currentPassword: string; newPassword: string }) {
+  const res = await fetch(apiUrl("/api/v1/users/change-password"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return handleResponse(res);
+}
+
 export async function syncTherapistsToUsers() {
   const res = await fetch(apiUrl("/api/v1/users/sync-therapists"), { method: "POST" });
   return handleResponse(res);

@@ -20,6 +20,7 @@ export default function NewVisitNote() {
   const assignmentId = searchParams.get("assignmentId") || "";
   const draftIdRef = useRef(null);
   const autoSaveQueueRef = useRef(Promise.resolve());
+  const autoSaveMessageTimerRef = useRef(null);
   const [initialDraft, setInitialDraft] = useState(null);
   const [draftChecked, setDraftChecked] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
@@ -39,6 +40,10 @@ export default function NewVisitNote() {
   }, []);
 
   useEffect(() => { loadFormData(); }, [loadFormData]);
+
+  useEffect(() => () => {
+    if (autoSaveMessageTimerRef.current) window.clearTimeout(autoSaveMessageTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -81,6 +86,7 @@ export default function NewVisitNote() {
   };
 
   const handleAutoSave = async (data) => {
+    if (autoSaveMessageTimerRef.current) window.clearTimeout(autoSaveMessageTimerRef.current);
     setAutoSaveStatus("saving");
     // Serialize saves so two quick Next/tab actions cannot create separate drafts.
     autoSaveQueueRef.current = autoSaveQueueRef.current.catch(() => {}).then(async () => {
@@ -98,9 +104,12 @@ export default function NewVisitNote() {
     try {
       const result = await autoSaveQueueRef.current;
       setAutoSaveStatus("saved");
+      autoSaveMessageTimerRef.current = window.setTimeout(() => {
+        setAutoSaveStatus("idle");
+      }, 3_000);
       return result;
     } catch (err) {
-      setAutoSaveStatus("error");
+      setAutoSaveStatus(err?.status === 401 ? "session-expired" : "error");
       console.error("Visit note autosave failed", err);
       throw err;
     }

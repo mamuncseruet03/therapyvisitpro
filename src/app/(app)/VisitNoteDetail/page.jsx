@@ -365,6 +365,22 @@ function VisitNoteDetailContent() {
             ))}
           </div>
 
+          {visit.visit_type === "treatment" && visit.patient_education && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-semibold">Patient / Caregiver Education</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-slate-600">
+                {[
+                  ["Topics Covered", [...(visit.patient_education.topics || []), visit.patient_education.other_topic].filter(Boolean).join(", ")],
+                  ["Educated To", (visit.patient_education.educated_to || []).join(", ")],
+                  ["Response to Education", visit.patient_education.response],
+                  ["Education Notes", visit.patient_education.notes],
+                ].filter(([, value]) => value).map(([label, value]) => (
+                  <p key={label} className="whitespace-pre-wrap"><strong>{label}</strong> · {value}</p>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Goals, Interventions, CPT */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {(visit.goals_addressed || []).length > 0 && (
