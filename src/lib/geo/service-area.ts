@@ -27,3 +27,20 @@ export function pointInArea([lat, lng]: Point, polygon: Point[]) {
   }
   return inside;
 }
+
+export function milesToCoverageBoundary([lat, lng]: Point, polygon: Point[]) {
+  const longitudeScale = 69.17 * Math.cos(lat * Math.PI / 180);
+  let nearest = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const [latA, lngA] = polygon[i];
+    const [latB, lngB] = polygon[(i + 1) % polygon.length];
+    const x = (lngA - lng) * longitudeScale;
+    const y = (latA - lat) * 69.17;
+    const dx = (lngB - lngA) * longitudeScale;
+    const dy = (latB - latA) * 69.17;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared ? Math.max(0, Math.min(1, -(x * dx + y * dy) / lengthSquared)) : 0;
+    nearest = Math.min(nearest, Math.hypot(x + fraction * dx, y + fraction * dy));
+  }
+  return nearest;
+}

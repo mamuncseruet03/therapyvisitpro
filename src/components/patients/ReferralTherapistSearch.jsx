@@ -48,12 +48,14 @@ export default function ReferralTherapistSearch({ form, onChange, children }) {
       {current?.error && <p role="alert" className="text-sm text-red-700">Therapist search failed. Try again.</p>}
       {current?.result && (
         <div aria-live="polite" className="space-y-2">
-          <p className="text-sm">{!current.result.location ? "Could not locate that ZIP code or city and state." :
+          <p className="text-sm">{!current.result.location ? "Address could not be located. Showing eligible therapists for the selected therapy types with coverage unverified." :
             current.result.matches.length ? `Matches for ${current.result.location}` : `No therapists cover ${current.result.location} for the selected therapy types.`}</p>
           {current.result.matches.map((match) => (
             <article key={match.id} className="space-y-2 rounded border p-2">
               <p className="font-medium">{match.name} ({match.credentials || match.discipline})</p>
-              <p className="text-sm text-slate-600">{match.reason}</p>
+              <ul className="text-sm text-slate-600">
+                {match.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
               <div className="flex flex-wrap gap-2">
                 {[["evaluating", "Evaluating"], ["treating", "Treating"]].map(([role, label]) => {
                   if (!match[role]) return null;
