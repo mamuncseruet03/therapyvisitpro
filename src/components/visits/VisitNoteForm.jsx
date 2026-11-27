@@ -1,5 +1,6 @@
 "use client";
 
+import { minimumIdentifiers, selectedIdentifierLabels, TWO_IDENTIFIERS_REQUIRED } from "@/lib/visit-identification";
 import { NO_THERA_DOCS_MESSAGE } from "@/lib/agency-preferences";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useCurrentUser } from "@/components/layout/UserContext";
@@ -332,8 +333,10 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
       if (!form.visit_date) errors.push("Visit Date is required");
       if (!form.therapy_type) errors.push("Therapy Type is required");
       if (!form.time_in) errors.push("Punch In (Time In) is required");
-      const hasPatientId = Object.values(form.patient_identification || {}).some(Boolean);
-      if (!hasPatientId) errors.push("At least one Patient Identification method is required");
+      const required = minimumIdentifiers(form.therapy_type, form.visit_type);
+      if (selectedIdentifierLabels(form.patient_identification).length < required) {
+        errors.push(required === 2 ? TWO_IDENTIFIERS_REQUIRED : "At least one Patient Identification method is required");
+      }
     }
     if (tab === "Vitals") {
       const vitalRequired = agencyVitalConfig?.required !== false;
@@ -468,6 +471,11 @@ export default function VisitNoteForm({ patients = [], therapists = [], agencies
 
   return (
     <div className="space-y-4 max-w-6xl">
+      {patientAgencyRecord?.preferences?.document_in_agency_software && (
+        <p role="status" className="rounded-md border bg-slate-50 p-3 text-sm">
+          Complete agency documentation in {patientAgencyRecord.preferences.agency_software === "None" ? "the agency’s software" : patientAgencyRecord.preferences.agency_software || "the agency’s software"}.
+        </p>
+      )}
       {noTheraDocs && <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{NO_THERA_DOCS_MESSAGE}</p>}
       <div className="flex justify-end min-h-5 text-xs">
         {autoSaveStatus === "saving" && <span className="text-slate-500">Saving draft…</span>}

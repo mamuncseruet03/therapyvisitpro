@@ -381,6 +381,34 @@ function VisitNoteDetailContent() {
             </Card>
           )}
 
+          {visit.visit_type === "treatment" && visit.treatment_rendered && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-semibold">Treatment Rendered</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-slate-600">
+                {Object.entries(visit.treatment_rendered.items || {})
+                  .filter(([, item]) => item?.done || item?.description?.trim())
+                  .map(([key, item]) => (
+                    <p key={key} className="whitespace-pre-wrap">
+                      <strong className="capitalize">{key.replace(/_+/g, " ")}</strong>
+                      {item.description && <> · {item.description}</>}
+                    </p>
+                  ))}
+                {visit.treatment_rendered.notes && <p className="whitespace-pre-wrap">{visit.treatment_rendered.notes}</p>}
+              </CardContent>
+            </Card>
+          )}
+
+          {visit.visit_type === "treatment" && visit.follow_up_goals?.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-semibold">Follow-up Goals</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
+                  {visit.follow_up_goals.map((goal, index) => <li key={index}>{goal}</li>)}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Goals, Interventions, CPT */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {(visit.goals_addressed || []).length > 0 && (
@@ -426,6 +454,25 @@ function VisitNoteDetailContent() {
               </Card>
             )}
           </div>
+
+          {(visit.pain_location || visit.pain_assessment?.location || (visit.pain_sites ?? visit.pain_assessment?.additionalSites)?.length || visit.pain_intervention || visit.pain_assessment?.intervention) && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Pain Assessment</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {[
+                  { location: visit.pain_location ?? visit.pain_assessment?.location, score: visit.vas_pain_score ?? visit.pain_assessment?.vasPainScore },
+                  ...(visit.pain_sites ?? visit.pain_assessment?.additionalSites ?? []),
+                ].map(({ location, score }, index) => location || (score !== "" && score != null) ? (
+                  <p key={index}><strong>Site {index + 1}</strong> · {location || "Location not entered"}
+                    {score !== "" && score != null && <> · VAS {score}/10</>}
+                  </p>
+                ) : null)}
+                {(visit.pain_intervention ?? visit.pain_assessment?.intervention) && (
+                  <p className="whitespace-pre-wrap"><strong>Intervention for Pain</strong> · {visit.pain_intervention ?? visit.pain_assessment?.intervention}</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Vitals */}
           {visit.vitals && Object.values(visit.vitals).some(v => v) && (

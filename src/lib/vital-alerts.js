@@ -15,6 +15,17 @@ export async function createVitalAlert(db, visit, user) {
   const readings = getOutOfRangeVitals(visit.vitals, agency?.vitalSignsConfig);
   if (!readings.length) return;
 
+  const [{ ready }] = await db.$queryRaw`
+    SELECT count(*) = 3 AS ready
+    FROM information_schema.columns
+    WHERE table_schema = current_schema() AND table_name = 'communication_notes'
+      AND column_name IN ('vital_visit_id', 'resolved_at', 'resolution')
+  `;
+  if (!ready) {
+    console.warn("Vital alert requires the pending communication notes migration.");
+    return;
+  }
+
   const note = readings.map(({ label, reading, lower, upper }) => {
     const limit = lower != null && reading < lower ? `below ${lower}` : `above ${upper}`;
     return `${label}: ${reading} (${limit})`;

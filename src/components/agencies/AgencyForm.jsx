@@ -1,6 +1,6 @@
 "use client";
 
-import { VITAL_LIMIT_FIELDS } from "@/lib/vital-limits";
+import { DEFAULT_VITAL_LIMITS, VITAL_LIMIT_FIELDS } from "@/lib/vital-limits";
 
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,7 +29,11 @@ const VITAL_SIGN_OPTIONS = [
 ];
 
 export default function AgencyForm({ open, onClose, onSave, initial }) {
-  const [form, setForm] = useState(initial || {
+  const [form, setForm] = useState(initial ? {
+    ...initial,
+    emergency_contact_number: initial.preferences?.emergency_contact_number || "",
+    nurse_on_call_number: initial.preferences?.nurse_on_call_number || "",
+  } : {
     name: "",
     address: "",
     city: "",
@@ -156,13 +160,14 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
       formData.append("file", file);
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
+      if (!res.ok || !data.url) throw new Error("Failed to upload file");
       const arr = form.documents || [];
       set("documents", [
         ...arr,
         {
           name: file.name,
           type: "contract",
-          url: data.url || "#",
+          url: data.url,
           uploaded_date: new Date().toISOString(),
         },
       ]);
@@ -188,7 +193,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
     const rate = (form.rates || []).find(
       r => r.therapy_type === therapyType && r.visit_type === visitType
     );
-    return rate?.rate || "";
+    return rate?.rate ?? "";
   };
 
   const updateRate = (therapyType, visitType, value) => {
@@ -350,6 +355,20 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
           </div>
 
           <div className="border-t pt-4">
+            <h3 className="mb-3 text-sm font-semibold text-slate-700">Emergency Contacts</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                Emergency Contact Number
+                <Input type="tel" maxLength={60} value={form.emergency_contact_number || ""} onChange={(event) => set("emergency_contact_number", event.target.value)} />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Nurse On Call Number
+                <Input type="tel" maxLength={60} value={form.nurse_on_call_number || ""} onChange={(event) => set("nurse_on_call_number", event.target.value)} />
+              </label>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
             <h3 className="mb-2 text-sm font-semibold text-slate-700">Agency Logo</h3>
             {form.vital_signs_config?.logo_url && (
               <div className="mb-2 flex items-center gap-3">
@@ -382,6 +401,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
                 <React.Fragment key={key}>
                   <span>{label}</span>
                   {["lower", "upper"].map((bound) => <Input key={bound} aria-label={`${label} ${bound} limit`} type="number" step="any"
+                    placeholder={String(DEFAULT_VITAL_LIMITS[key][bound])}
                     value={form.vital_signs_config?.limits?.[key]?.[bound] ?? ""}
                     onChange={(event) => {
                       const config = form.vital_signs_config || {};
@@ -761,7 +781,7 @@ export default function AgencyForm({ open, onClose, onSave, initial }) {
 
           <div>
             <Label>Notes</Label>
-            <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={3} placeholder="Additional information about the agency..." />
+            <Textarea value={form.notes ?? ""} onChange={(e) => set("notes", e.target.value)} rows={3} placeholder="Additional information about the agency..." />
           </div>
         </div>
 

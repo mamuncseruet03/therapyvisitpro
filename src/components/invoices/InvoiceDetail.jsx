@@ -186,6 +186,9 @@ export default function InvoiceDetail({ invoice, onBack, onStatusChange }) {
             </TableBody>
           </Table>
 
+          {invoice.agency_preferences?.invoice_terms && (
+            <p className="text-sm text-slate-600">Invoice Terms · {invoice.agency_preferences.invoice_terms}</p>
+          )}
           {invoice.notes && (
             <div className="p-3 bg-slate-50 rounded-lg">
               <p className="text-xs text-slate-400 font-semibold mb-1">NOTES</p>

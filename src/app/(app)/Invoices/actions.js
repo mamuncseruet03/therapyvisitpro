@@ -35,6 +35,16 @@ async function loadPayerRulesForVisits(visits) {
   return new Map(await Promise.all(names.map(async (name) => [name, await findPayerRules(name)])));
 }
 
+function orderInvoiceItems(items, order) {
+  const key = {
+    "Patient Last Name": (item) => item.patientName?.trim().split(/\s+/).at(-1),
+    "Patient First Name": (item) => item.patientName?.trim().split(/\s+/)[0],
+    "Visit Date": (item) => item.visitDate?.toISOString(),
+    "Therapist Name": (item) => item.therapistName,
+  }[order];
+  return key ? [...items].sort((a, b) => String(key(a) ?? "").localeCompare(String(key(b) ?? ""))) : items;
+}
+
 export async function getInvoices() {
   await requireRole("SUPERUSER", "ADMIN");
 
@@ -42,6 +52,7 @@ export async function getInvoices() {
     orderBy: { createdAt: "desc" },
     include: {
       lineItems: true,
+      agency: { select: { vitalSignsConfig: true } },
     },
   });
 
@@ -56,7 +67,8 @@ export async function getInvoices() {
     status: inv.status?.toLowerCase(),
     notes: inv.notes,
     check_details: inv.checkDetails,
-    line_items: inv.lineItems.map((li) => ({
+    agency_preferences: inv.agency?.vitalSignsConfig?.agency_preferences,
+    line_items: orderInvoiceItems(inv.lineItems, inv.agency?.vitalSignsConfig?.agency_preferences?.invoice_sort_order).map((li) => ({
       id: li.id,
       visit_note_id: li.visitNoteId,
       patient_name: li.patientName,
@@ -80,6 +92,7 @@ export async function getAgenciesForInvoice() {
     select: {
       id: true,
       name: true,
+      vitalSignsConfig: true,
       rates: {
         select: {
           therapyType: true,
@@ -94,6 +107,7 @@ export async function getAgenciesForInvoice() {
   return agencies.map((a) => ({
     id: a.id,
     name: a.name,
+    billing_schedule: a.vitalSignsConfig?.agency_preferences?.billing_schedule,
     status: "active",
     rates: a.rates.map((r) => ({
       therapy_type: THERAPY_DISPLAY[r.therapyType] || r.therapyType,
@@ -121,7 +135,7 @@ export async function getCompletedVisitsForInvoice() {
       agencyId: true,
       specialPrice: true,
       nonBillable: true,
-      patient: { select: { insurance: true } },
+      patient: { select: { insurance: true, agencyId: true } },
     },
     orderBy: { visitDate: "desc" },
   });
@@ -137,8 +151,8 @@ export async function getCompletedVisitsForInvoice() {
       therapy_type: THERAPY_DISPLAY[v.therapyType] || v.therapyType,
       visit_type: VISIT_TYPE_DISPLAY[v.visitType] || v.visitType?.toLowerCase() || null,
       status: v.status?.toLowerCase(),
-      agency_id: v.agencyId,
-      special_price: v.specialPrice ? Number(v.specialPrice) : null,
+      agency_id: v.agencyId ?? v.patient?.agencyId ?? null,
+      special_price: v.specialPrice != null ? Number(v.specialPrice) : null,
       payer_rate: payerRateForVisit(v, rules.get(v.patient?.insurance)),
     }));
 }
@@ -154,7 +168,10 @@ function generateInvoiceNumber() {
 
 async function applyPayerRates(agencyId, requestedItems) {
   const visits = await prisma.visitNote.findMany({
-    where: { id: { in: requestedItems.map((item) => item.visit_note_id) }, agencyId },
+    where: {
+      id: { in: requestedItems.map((item) => item.visit_note_id) },
+      OR: [{ agencyId }, { agencyId: null, patient: { agencyId } }],
+    },
     select: { id: true, therapyType: true, visitType: true, patient: { select: { insurance: true } } },
   });
   const visitById = new Map(visits.map((visit) => [visit.id, visit]));

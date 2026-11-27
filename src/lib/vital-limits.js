@@ -7,6 +7,15 @@ export const VITAL_LIMIT_FIELDS = [
   ["oxygen_saturation", "Oxygen saturation (%)"],
 ];
 
+export const DEFAULT_VITAL_LIMITS = {
+  systolic: { lower: 90, upper: 140 },
+  diastolic: { lower: 60, upper: 90 },
+  heart_rate: { lower: 60, upper: 100 },
+  respiratory_rate: { lower: 12, upper: 20 },
+  temperature: { lower: 97, upper: 99.5 },
+  oxygen_saturation: { lower: 95, upper: 100 },
+};
+
 function numberOrMissing(value) {
   if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return null;
   const number = Number(value);
@@ -19,8 +28,8 @@ export function getOutOfRangeVitals(vitals, config) {
   return VITAL_LIMIT_FIELDS.flatMap(([key, label, field = key]) => {
     if (Array.isArray(config?.enabled) && !config.enabled.includes(field)) return [];
     const reading = numberOrMissing(readings[key]);
-    const lower = numberOrMissing(config?.limits?.[key]?.lower);
-    const upper = numberOrMissing(config?.limits?.[key]?.upper);
+    const lower = numberOrMissing(config?.limits?.[key]?.lower) ?? DEFAULT_VITAL_LIMITS[key].lower;
+    const upper = numberOrMissing(config?.limits?.[key]?.upper) ?? DEFAULT_VITAL_LIMITS[key].upper;
     if (reading === null || (lower !== null && upper !== null && lower > upper)) return [];
     return (lower !== null && reading < lower) || (upper !== null && reading > upper)
       ? [{ key, label, reading, lower, upper }]

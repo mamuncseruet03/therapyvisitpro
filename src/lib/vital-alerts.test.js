@@ -3,6 +3,7 @@ import { createVitalAlert } from "./vital-alerts";
 
 it("notifies coordinators only on the first abnormal save", async () => {
   const db = {
+    $queryRaw: vi.fn().mockResolvedValue([{ ready: true }]),
     patient: { findUnique: vi.fn().mockResolvedValue({ agencyId: "agency" }) },
     agency: { findUnique: vi.fn().mockResolvedValue({
       vitalSignsConfig: { limits: { oxygen_saturation: { lower: 92 } } },
@@ -30,4 +31,21 @@ it("notifies coordinators only on the first abnormal save", async () => {
   expect(db.notification.createMany).toHaveBeenCalledExactlyOnceWith({
     data: [expect.objectContaining({ recipientId: "coordinator", link: "/Communications" })],
   });
+});
+
+it("uses default bounds for blank limits and skips unavailable alert storage", async () => {
+  const db = {
+    patient: { findUnique: vi.fn().mockResolvedValue({ agencyId: "agency" }) },
+    agency: { findUnique: vi.fn().mockResolvedValue({ vitalSignsConfig: { limits: { oxygen_saturation: { lower: "" } } } }) },
+    $queryRaw: vi.fn().mockResolvedValue([{ ready: false }]),
+    communicationNote: { createMany: vi.fn() },
+  };
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await createVitalAlert(db, { id: "visit", patientId: "patient", vitals: { oxygen_saturation: 94 } }, {});
+    expect(db.$queryRaw).toHaveBeenCalledOnce();
+    expect(db.communicationNote.createMany).not.toHaveBeenCalled();
+  } finally {
+    warn.mockRestore();
+  }
 });

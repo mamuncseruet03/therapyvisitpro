@@ -38,8 +38,18 @@ const visitSectionColors: Record<string, string> = {
   "additional documentation": "#607d8b",
 };
 
-export async function createVisitNotePdf(title: string, fields: PdfField[], options: VisitPdfOptions) {
-  const document = new PDFDocument({ margin: 42, size: "A4", bufferPages: true });
+export type VisitPdfContent = {
+  title: string;
+  fields: PdfField[];
+  options: VisitPdfOptions;
+};
+
+export function createVisitNotePdf(title: string, fields: PdfField[], options: VisitPdfOptions) {
+  return createVisitNotesPdf([{ title, fields, options }]);
+}
+
+export async function createVisitNotesPdf(notes: VisitPdfContent[]) {
+  const document = new PDFDocument({ margin: 42, size: "A4", bufferPages: true, autoFirstPage: false });
   const chunks: Buffer[] = [];
   document.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
   const completed = new Promise<Buffer>((resolve, reject) => {
@@ -47,6 +57,17 @@ export async function createVisitNotePdf(title: string, fields: PdfField[], opti
     document.on("error", reject);
   });
 
+  for (const { title, fields, options } of notes) {
+    const firstPage = document.bufferedPageRange().count;
+    document.addPage();
+    drawVisitNote(document, title, fields, options, firstPage);
+  }
+
+  document.end();
+  return completed;
+}
+
+function drawVisitNote(document: PDFKit.PDFDocument, title: string, fields: PdfField[], options: VisitPdfOptions, firstPage: number) {
   const sectionLeft = 42;
   const sectionWidth = document.page.width - 84;
   const contentLeft = 56;
@@ -462,20 +483,17 @@ export async function createVisitNotePdf(title: string, fields: PdfField[], opti
   }
 
   const range = document.bufferedPageRange();
-  for (let pageIndex = range.start; pageIndex < range.start + range.count; pageIndex += 1) {
+  for (let pageIndex = firstPage; pageIndex < range.count; pageIndex += 1) {
     document.switchToPage(pageIndex);
     const originalBottomMargin = document.page.margins.bottom;
     document.page.margins.bottom = 0;
     const footerY = document.page.height - 29;
     document.font("Helvetica").fontSize(7).fillColor("#777777");
     document.text(`Generated: ${options.generatedDate || new Date().toLocaleDateString("en-US")}`, contentLeft, footerY, { lineBreak: false });
-    document.text(`Page ${pageIndex - range.start + 1} of ${range.count}`, 0, footerY, { align: "center", width: document.page.width, lineBreak: false });
+    document.text(`Page ${pageIndex - firstPage + 1} of ${range.count - firstPage}`, 0, footerY, { align: "center", width: document.page.width, lineBreak: false });
     document.text(`Patient: ${options.patientName}`, sectionLeft, footerY, { align: "right", width: sectionWidth, lineBreak: false });
     document.page.margins.bottom = originalBottomMargin;
   }
-
-  document.end();
-  return completed;
 }
 
 function humanizePdfKey(value: string) {

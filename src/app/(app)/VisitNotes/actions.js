@@ -1,5 +1,6 @@
 "use server";
 
+import { minimumIdentifiers, selectedIdentifierLabels, TWO_IDENTIFIERS_REQUIRED } from "@/lib/visit-identification";
 import { createVitalAlert } from "@/lib/vital-alerts";
 import { NO_THERA_DOCS_MESSAGE } from "@/lib/agency-preferences";
 import { prisma } from "@/lib/db";
@@ -230,7 +231,7 @@ export async function getVisitFormData() {
       orderBy: { fullName: "asc" },
     }),
     prisma.agency.findMany({
-      select: { id: true, name: true, documentMode: true, vitalSignsConfig: true },
+      select: { id: true, name: true, documentMode: true, vitalSignsConfig: true, agencyDocuments: true, requiredVisitDocuments: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -258,6 +259,8 @@ export async function getVisitFormData() {
       id: a.id,
       name: a.name,
       preferences: a.vitalSignsConfig?.agency_preferences,
+      documents: a.agencyDocuments || [],
+      required_visit_documents: a.requiredVisitDocuments || [],
       vital_signs_config: a.vitalSignsConfig,
       document_mode: a.documentMode?.toLowerCase() || "theradocs",
     })),
@@ -319,6 +322,10 @@ export async function saveVisitNote(data) {
   const visitEnum = VISIT_TYPE_MAP[data.visit_type] || data.visit_type?.toUpperCase() || null;
   const statusEnum = (data.status || "draft").toUpperCase();
   if (["COMPLETED", "SIGNED"].includes(statusEnum)) {
+    if (minimumIdentifiers(therapyEnum, visitEnum) === 2 &&
+        selectedIdentifierLabels(data.patient_identification ?? data.patient_id_method).length < 2) {
+      return { error: TWO_IDENTIFIERS_REQUIRED };
+    }
     const patient = await prisma.patient.findUnique({
       where: { id: data.patient_id },
       select: { agency: { select: { vitalSignsConfig: true } } },
@@ -353,6 +360,10 @@ export async function saveVisitNote(data) {
     ? data.documents
     : {};
 
+  const patientAgency = data.agency_id || !data.patient_id ? null : await prisma.patient.findUnique({
+    where: { id: data.patient_id },
+    select: { agencyId: true },
+  });
   const visitData = {
     patientId: data.patient_id,
     patientName: data.patient_name,
@@ -361,7 +372,7 @@ export async function saveVisitNote(data) {
     visitDate: new Date(data.visit_date),
     therapyType: therapyEnum,
     visitType: visitEnum,
-    agencyId: data.agency_id || null,
+    agencyId: data.agency_id || patientAgency?.agencyId || null,
     status: statusEnum,
     durationMinutes: data.duration_minutes !== undefined && data.duration_minutes !== null && data.duration_minutes !== ""
       ? parseInt(data.duration_minutes, 10)
@@ -391,6 +402,8 @@ export async function saveVisitNote(data) {
       descriptionOther: data.pain_description_other ?? data.pain_assessment?.descriptionOther ?? "",
       precautions: data.pain_precautions ?? data.pain_assessment?.precautions ?? "",
       patientEducation: data.pain_education ?? data.pain_assessment?.patientEducation ?? "",
+      additionalSites: data.pain_sites ?? data.pain_assessment?.additionalSites ?? [],
+      intervention: data.pain_intervention ?? data.pain_assessment?.intervention ?? "",
       frequency: data.pain_frequency ?? data.pain_assessment?.frequency ?? "",
       managementEffectiveness: data.pain_management_effectiveness ?? data.pain_assessment?.managementEffectiveness ?? "",
     }),
@@ -537,7 +550,11 @@ export async function updateVisitNoteField(id, field, value) {
   if (field === "status") {
     prismaValue = value?.toUpperCase();
     if (["COMPLETED", "SIGNED"].includes(prismaValue)) {
-      const note = await prisma.visitNote.findUnique({ where: { id }, select: { documents: true, cptCodes: true } });
+      const note = await prisma.visitNote.findUnique({ where: { id }, select: { documents: true, cptCodes: true, therapyType: true, visitType: true, patientIdMethod: true } });
+      if (minimumIdentifiers(note?.therapyType, note?.visitType) === 2 &&
+          selectedIdentifierLabels(note.documents?.formSnapshot?.patient_identification ?? note.patientIdMethod).length < 2) {
+        return { error: TWO_IDENTIFIERS_REQUIRED };
+      }
       if (requiresCptCode(note?.documents?.formSnapshot?.billing_payer) && !hasCptCode(note.cptCodes)) {
         return { error: CPT_REQUIRED_MESSAGE };
       }

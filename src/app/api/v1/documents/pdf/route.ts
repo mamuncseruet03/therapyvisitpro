@@ -1,10 +1,13 @@
+import { selectedIdentifierLabels } from "@/lib/visit-identification";
 import { NextRequest } from "next/server";
+import type { Prisma } from "@/generated/prisma/client";
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/session";
 import { existsSync } from "fs";
 import { join } from "path";
-import { createSimplePdf, createVisitNotePdf, type PdfField } from "@/lib/documents/pdf";
+import { createInvoicePdf, invoiceMoney } from "@/lib/documents/invoice-pdf";
+import { createVisitNotesPdf, type PdfField, type VisitPdfContent } from "@/lib/documents/pdf";
 
 const TECHNICAL_FIELDS = new Set([
   "id", "patient_id", "therapist_id", "patient_name", "therapist_name",
@@ -62,18 +65,7 @@ function calculateVisitDuration(timeIn: unknown, timeOut: unknown, storedDuratio
 }
 
 function patientIdentificationSummary(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const labels: Record<string, string> = {
-    date_of_birth: "date of birth",
-    address: "address",
-    facial_recognition: "facial recognition",
-    family_member_verify: "family member verify",
-    ssn: "SSN",
-  };
-  const selected = Object.entries(value as Record<string, unknown>)
-    .filter(([, checked]) => checked === true)
-    .map(([key]) => labels[key] || humanize(key).toLowerCase());
-  return selected.length ? selected.join(", ") : null;
+  return selectedIdentifierLabels(value).join(", ") || null;
 }
 
 function formatSignatureTimestamp(value: unknown) {
@@ -350,7 +342,9 @@ function snapshotSection(key: string) {
   if (/^(balance_)/.test(key) || key === "balance") return "Assessment";
   if (/^(mobility_|wheelchair_|ambulation_|weight_bearing|stair|sensory_|cognitive_|prosthetic_)/.test(key) || ["ambulation", "weight_bearing"].includes(key)) return "Mobility";
   if (["assessment", "standardized_testing", "standardized_tests", "medical_complexity", "risk_factors"].includes(key)) return "Assessment";
-  if (/^(eval_treatment_goals|goals_|interventions|plan|skilled_service|care_coordination|therapy_orders|precipitating_events|new_clinical_changes|why_skilled_therapy_needed_now)/.test(key)) return "Goals and Plan";
+  if (key === "treatment_rendered") return "Treatment Rendered";
+  if (key === "slp_swallow") return "Swallow Function";
+  if (/^(follow_up_goals|eval_treatment_goals|goals_|interventions|plan|skilled_service|care_coordination|therapy_orders|precipitating_events|new_clinical_changes|why_skilled_therapy_needed_now)/.test(key)) return "Goals and Plan";
   if (/^(dc_plan|patient_education)/.test(key)) return "Discharge Plan and Education";
   if (/^(discharge|nomnc|oasis|soc_oasis|roc_oasis)/.test(key)) return "Discharge";
   if (/^(therapist_signature|patient_signature|cpt_codes|library_documents|agency_documents|additional_uploads)/.test(key)) return "Signatures";
@@ -359,7 +353,7 @@ function snapshotSection(key: string) {
 }
 
 function addSnapshotSections(fields: PdfField[], snapshot: Record<string, unknown>) {
-  const order = ["Vitals", "Pain Assessment", "Subjective", "Objective", "Range of Motion", "Activities of Daily Living", "Mobility", "Assessment", "Goals and Plan", "Discharge", "Additional Documentation", "Discharge Plan and Education"];
+  const order = ["Vitals", "Pain Assessment", "Subjective", "Objective", "Range of Motion", "Activities of Daily Living", "Mobility", "Swallow Function", "Assessment", "Treatment Rendered", "Goals and Plan", "Discharge", "Additional Documentation", "Discharge Plan and Education"];
   const grouped: Record<string, Record<string, unknown>> = {};
   const intakeExtras: Record<string, unknown> = {};
   const displayedIntakeKeys = new Set(["visit_date", "therapy_type", "visit_type", "agency", "time_in", "time_out", "duration_minutes", "patient_identification", "patient_id_method"]);
@@ -381,6 +375,13 @@ function addSnapshotSections(fields: PdfField[], snapshot: Record<string, unknow
     grouped[section] ||= {};
     if (key === "vitals" && value && typeof value === "object" && !Array.isArray(value)) {
       Object.assign(grouped[section], value);
+    } else if (key === "pain_sites" && Array.isArray(value)) {
+      value.forEach((site, index) => {
+        if (!site || typeof site !== "object") return;
+        const number = index + 2;
+        grouped[section][`site_${number}_location`] = site.location;
+        grouped[section][`site_${number}_vas_score`] = site.score;
+      });
     } else {
       grouped[section][key] = value;
     }
@@ -437,215 +438,262 @@ function hasSnapshotSection(snapshot: Record<string, unknown>, section: string) 
   );
 }
 
-async function buildDocument(type: string, id: string) {
-  if (type === "visit") {
-    const note = await prisma.visitNote.findUnique({
-      where: { id },
-      include: { patient: { include: { diagnoses: true, agency: true } } },
-    });
-    if (!note) return null;
-    const documents = note.documents && typeof note.documents === "object" && !Array.isArray(note.documents)
-      ? note.documents as Record<string, unknown>
-      : {};
-    const snapshot = documents.formSnapshot && typeof documents.formSnapshot === "object"
-      ? documents.formSnapshot as Record<string, unknown>
-      : {};
-    const physician = primaryPhysician(note.patient?.physicians);
-    const storedTimeTracking = note.timeTracking && typeof note.timeTracking === "object" && !Array.isArray(note.timeTracking)
-      ? note.timeTracking as Record<string, unknown>
-      : {};
-    const timeIn = snapshot.time_in || storedTimeTracking.timeIn || storedTimeTracking.time_in || null;
-    const timeOut = snapshot.time_out || storedTimeTracking.timeOut || storedTimeTracking.time_out || null;
-    const durationMinutes = calculateVisitDuration(timeIn, timeOut, note.durationMinutes);
-    const identifiedBy = patientIdentificationSummary(snapshot.patient_identification || snapshot.patient_id_method || note.patientIdMethod);
+const visitPdfInclude = { patient: { include: { diagnoses: true, agency: true } } } satisfies Prisma.VisitNoteInclude;
+type VisitPdfNote = Prisma.VisitNoteGetPayload<{ include: typeof visitPdfInclude }>;
 
-    const fields: PdfField[] = [
-      { label: "Intake", section: true },
-      { label: "Patient Information", subheading: true },
-      { label: "Patient", value: note.patientName },
-      { label: "Date of Birth", value: formatUsDate(note.patient?.dateOfBirth) },
-      { label: "Phone", value: note.patient?.phone },
-      { label: "Address", value: [note.patient?.address, note.patient?.city, note.patient?.state, note.patient?.zip].filter(Boolean).join(", ") },
-      { label: "Insurance", value: note.patient?.insurance },
-      { label: "Agency", value: note.patient?.agency?.name || snapshot.agency },
-      { label: "Auth #", value: note.patient?.authorizationNumber },
-      { label: "Cert Period", value: note.patient?.certPeriodStart && note.patient?.certPeriodEnd ? `${formatUsDate(note.patient.certPeriodStart)} to ${formatUsDate(note.patient.certPeriodEnd)}` : null },
-      { label: "Referring Physician", value: physician?.name || snapshot.physician_name || snapshot.referring_physician },
-      { label: "Physician Phone", value: physician?.phone || snapshot.physician_phone },
-      { label: "Diagnoses", value: note.patient?.diagnoses?.map((diagnosis) => `• ${diagnosis.diagnosis}${diagnosis.icd10Code ? ` (${diagnosis.icd10Code})` : ""}`).join("\n") },
-      { label: "Visit Information", subheading: true },
-      { label: "Therapist", value: note.therapistName },
-      { label: "Date", value: formatUsDate(note.visitDate) },
-      { label: "Punch In", value: timeIn || "N/A" },
-      { label: "Punch Out", value: timeOut || "N/A" },
-      { label: "Punch Out Date", value: snapshot.punch_out_date || formatUsDate(note.visitDate) },
-      { label: "Therapy", value: humanize(note.therapyType.toLowerCase()) },
-      { label: "Visit Type", value: note.visitType?.toLowerCase().replaceAll("_", " ") },
-      { label: "Patient Identified By", value: identifiedBy },
-      { label: "Duration", value: durationMinutes !== null ? `${durationMinutes} minutes` : null },
-    ];
+async function visitPdfBranding() {
+  const companyInfo = await prisma.companyInfo.findFirst();
+  const configuredLogoPath = companyInfo?.logoUrl?.startsWith("/")
+    ? join(process.cwd(), "public", companyInfo.logoUrl)
+    : null;
+  const defaultLogoPath = join(process.cwd(), "public", "apex-rehab-logo.png");
+  const logoPath = configuredLogoPath && existsSync(configuredLogoPath)
+    ? configuredLogoPath
+    : existsSync(defaultLogoPath) ? defaultLogoPath : null;
+  return {
+    companyName: companyInfo?.companyName || "TherapyDocs",
+    generatedDate: new Date().toLocaleDateString("en-US"),
+    logoPath,
+  };
+}
 
-    if (Object.keys(snapshot).length > 0) {
-      addSnapshotSections(fields, snapshot);
-      // Older notes may contain only a partial form snapshot. Fill missing
-      // evaluation sections from the normalized clinical JSON columns.
-      if (!hasSnapshotSection(snapshot, "Vitals")) {
-        addSection(fields, "Vitals", note.vitals);
-        addSection(fields, "Pain Assessment", note.painAssessment);
-      }
-      if (!hasSnapshotSection(snapshot, "Subjective")) addSection(fields, "Subjective", note.subjectiveData);
-      if (!hasSnapshotSection(snapshot, "Objective")) {
-        const objectiveData = note.objectiveData && typeof note.objectiveData === "object" && !Array.isArray(note.objectiveData)
-          ? note.objectiveData as Record<string, unknown>
-          : {};
-        const { romEvaluation: _romEvaluation, ...objectiveWithoutRom } = objectiveData;
-        addSection(fields, "Objective", objectiveWithoutRom);
-      }
-      if (!hasSnapshotSection(snapshot, "Range of Motion")) {
-        const objectiveData = note.objectiveData && typeof note.objectiveData === "object" && !Array.isArray(note.objectiveData)
-          ? note.objectiveData as Record<string, unknown>
-          : {};
-        if (hasValue(objectiveData.romEvaluation)) {
-          fields.push(
-            { label: "Range of Motion", section: true },
-            { label: "Range of Motion", layout: "rom-grid", data: objectiveData.romEvaluation },
-          );
-        }
-      }
-      if (!hasSnapshotSection(snapshot, "Mobility")) addSection(fields, "Mobility", note.mobilityData);
-      if (!hasSnapshotSection(snapshot, "Activities of Daily Living")) addSection(fields, "Activities of Daily Living", note.adlData);
-      if (!hasSnapshotSection(snapshot, "Assessment")) addSection(fields, "Assessment", note.assessmentData);
-      if (!hasSnapshotSection(snapshot, "Goals and Plan")) {
-        addSection(fields, "Goals and Plan", note.goalsPlan);
-        addTherapyOrdersSection(fields, note.therapyOrders);
-      } else if (!hasValue(snapshot.therapy_orders)) {
-        addTherapyOrdersSection(fields, note.therapyOrders);
-      }
-      if (!hasSnapshotSection(snapshot, "Discharge Plan and Education")) addSection(fields, "Discharge Plan and Education", note.dcPlanEducation);
-      if (!hasSnapshotSection(snapshot, "Discharge")) {
-        addSection(fields, "Discharge", note.dischargeData);
-        addSection(fields, "NOMNC", note.nomncData);
-        addSection(fields, "OASIS", note.oasisData);
-      }
-    } else {
+function visitPdfContent(note: VisitPdfNote, branding: Awaited<ReturnType<typeof visitPdfBranding>>): VisitPdfContent {
+  const documents = note.documents && typeof note.documents === "object" && !Array.isArray(note.documents)
+    ? note.documents as Record<string, unknown>
+    : {};
+  const snapshot = documents.formSnapshot && typeof documents.formSnapshot === "object"
+    ? documents.formSnapshot as Record<string, unknown>
+    : {};
+  const physician = primaryPhysician(note.patient?.physicians);
+  const storedTimeTracking = note.timeTracking && typeof note.timeTracking === "object" && !Array.isArray(note.timeTracking)
+    ? note.timeTracking as Record<string, unknown>
+    : {};
+  const timeIn = snapshot.time_in || storedTimeTracking.timeIn || storedTimeTracking.time_in || null;
+  const timeOut = snapshot.time_out || storedTimeTracking.timeOut || storedTimeTracking.time_out || null;
+  const durationMinutes = calculateVisitDuration(timeIn, timeOut, note.durationMinutes);
+  const identifiedBy = patientIdentificationSummary(snapshot.patient_identification || snapshot.patient_id_method || note.patientIdMethod);
+
+  const fields: PdfField[] = [
+    { label: "Intake", section: true },
+    { label: "Patient Information", subheading: true },
+    { label: "Patient", value: note.patientName },
+    { label: "Date of Birth", value: formatUsDate(note.patient?.dateOfBirth) },
+    { label: "Phone", value: note.patient?.phone },
+    { label: "Address", value: [note.patient?.address, note.patient?.city, note.patient?.state, note.patient?.zip].filter(Boolean).join(", ") },
+    { label: "Insurance", value: note.patient?.insurance },
+    { label: "Agency", value: note.patient?.agency?.name || snapshot.agency },
+    { label: "Auth #", value: note.patient?.authorizationNumber },
+    { label: "Cert Period", value: note.patient?.certPeriodStart && note.patient?.certPeriodEnd ? `${formatUsDate(note.patient.certPeriodStart)} to ${formatUsDate(note.patient.certPeriodEnd)}` : null },
+    { label: "Referring Physician", value: physician?.name || snapshot.physician_name || snapshot.referring_physician },
+    { label: "Physician Phone", value: physician?.phone || snapshot.physician_phone },
+    { label: "Diagnoses", value: note.patient?.diagnoses?.map((diagnosis) => `• ${diagnosis.diagnosis}${diagnosis.icd10Code ? ` (${diagnosis.icd10Code})` : ""}`).join("\n") },
+    { label: "Visit Information", subheading: true },
+    { label: "Therapist", value: note.therapistName },
+    { label: "Date", value: formatUsDate(note.visitDate) },
+    { label: "Punch In", value: timeIn || "N/A" },
+    { label: "Punch Out", value: timeOut || "N/A" },
+    { label: "Punch Out Date", value: snapshot.punch_out_date || formatUsDate(note.visitDate) },
+    { label: "Therapy", value: humanize(note.therapyType.toLowerCase()) },
+    { label: "Visit Type", value: note.visitType?.toLowerCase().replaceAll("_", " ") },
+    { label: "Patient Identified By", value: identifiedBy },
+    { label: "Duration", value: durationMinutes !== null ? `${durationMinutes} minutes` : null },
+  ];
+
+  if (Object.keys(snapshot).length > 0) {
+    addSnapshotSections(fields, snapshot);
+    // Older notes may contain only a partial form snapshot. Fill missing
+    // evaluation sections from the normalized clinical JSON columns.
+    if (!hasSnapshotSection(snapshot, "Vitals")) {
       addSection(fields, "Vitals", note.vitals);
       addSection(fields, "Pain Assessment", note.painAssessment);
-      addSection(fields, "Subjective", note.subjectiveData);
+    }
+    if (!hasSnapshotSection(snapshot, "Subjective")) addSection(fields, "Subjective", note.subjectiveData);
+    if (!hasSnapshotSection(snapshot, "Objective")) {
       const objectiveData = note.objectiveData && typeof note.objectiveData === "object" && !Array.isArray(note.objectiveData)
         ? note.objectiveData as Record<string, unknown>
         : {};
       const { romEvaluation: _romEvaluation, ...objectiveWithoutRom } = objectiveData;
       addSection(fields, "Objective", objectiveWithoutRom);
+    }
+    if (!hasSnapshotSection(snapshot, "Range of Motion")) {
+      const objectiveData = note.objectiveData && typeof note.objectiveData === "object" && !Array.isArray(note.objectiveData)
+        ? note.objectiveData as Record<string, unknown>
+        : {};
       if (hasValue(objectiveData.romEvaluation)) {
         fields.push(
           { label: "Range of Motion", section: true },
           { label: "Range of Motion", layout: "rom-grid", data: objectiveData.romEvaluation },
         );
       }
-      addSection(fields, "Mobility", note.mobilityData);
-      addSection(fields, "Activities of Daily Living", note.adlData);
-      addSection(fields, "SOAP Note", note.soapNotes);
-      addSection(fields, "Assessment", note.assessmentData);
+    }
+    if (!hasSnapshotSection(snapshot, "Mobility")) addSection(fields, "Mobility", note.mobilityData);
+    if (!hasSnapshotSection(snapshot, "Activities of Daily Living")) addSection(fields, "Activities of Daily Living", note.adlData);
+    if (!hasSnapshotSection(snapshot, "Assessment")) addSection(fields, "Assessment", note.assessmentData);
+    if (!hasSnapshotSection(snapshot, "Goals and Plan")) {
       addSection(fields, "Goals and Plan", note.goalsPlan);
       addTherapyOrdersSection(fields, note.therapyOrders);
-      addSection(fields, "Discharge Plan and Education", note.dcPlanEducation);
-      addSection(fields, "Re-evaluation", note.reevalData);
+    } else if (!hasValue(snapshot.therapy_orders)) {
+      addTherapyOrdersSection(fields, note.therapyOrders);
+    }
+    if (!hasSnapshotSection(snapshot, "Discharge Plan and Education")) addSection(fields, "Discharge Plan and Education", note.dcPlanEducation);
+    if (!hasSnapshotSection(snapshot, "Discharge")) {
       addSection(fields, "Discharge", note.dischargeData);
       addSection(fields, "NOMNC", note.nomncData);
       addSection(fields, "OASIS", note.oasisData);
-      addSection(fields, "PTA Supervision", note.ptaSupervision);
-      addSection(fields, "Missed Visit", note.missedVisitData);
     }
-
-    if (note.visitType?.toLowerCase().includes("discharge") && !fields.some((field) => field.section && field.label === "Discharge")) {
-      fields.push({ label: "Discharge", section: true });
+  } else {
+    addSection(fields, "Vitals", note.vitals);
+    addSection(fields, "Pain Assessment", note.painAssessment);
+    addSection(fields, "Subjective", note.subjectiveData);
+    const objectiveData = note.objectiveData && typeof note.objectiveData === "object" && !Array.isArray(note.objectiveData)
+      ? note.objectiveData as Record<string, unknown>
+      : {};
+    const { romEvaluation: _romEvaluation, ...objectiveWithoutRom } = objectiveData;
+    addSection(fields, "Objective", objectiveWithoutRom);
+    if (hasValue(objectiveData.romEvaluation)) {
+      fields.push(
+        { label: "Range of Motion", section: true },
+        { label: "Range of Motion", layout: "rom-grid", data: objectiveData.romEvaluation },
+      );
     }
+    addSection(fields, "Mobility", note.mobilityData);
+    addSection(fields, "Activities of Daily Living", note.adlData);
+    addSection(fields, "SOAP Note", note.soapNotes);
+    addSection(fields, "Assessment", note.assessmentData);
+    addSection(fields, "Goals and Plan", note.goalsPlan);
+    addTherapyOrdersSection(fields, note.therapyOrders);
+    addSection(fields, "Discharge Plan and Education", note.dcPlanEducation);
+    addSection(fields, "Re-evaluation", note.reevalData);
+    addSection(fields, "Discharge", note.dischargeData);
+    addSection(fields, "NOMNC", note.nomncData);
+    addSection(fields, "OASIS", note.oasisData);
+    addSection(fields, "PTA Supervision", note.ptaSupervision);
+    addSection(fields, "Missed Visit", note.missedVisitData);
+  }
 
-    const therapistSignature = snapshot.therapist_signature;
-    const patientSignature = snapshot.patient_signature;
-    // A missing physician name must not suppress the approval section or stop
-    // the rest of the visit note from being generated.
-    if (note.treatmentApproved) {
-      fields.push({
-        label: "Physician Review & Approval",
-        layout: "physician-approval",
-        data: { physicianName: physician?.name || "N/A" },
-      });
+  if (note.visitType?.toLowerCase().includes("discharge") && !fields.some((field) => field.section && field.label === "Discharge")) {
+    fields.push({ label: "Discharge", section: true });
+  }
+
+  const therapistSignature = snapshot.therapist_signature;
+  const patientSignature = snapshot.patient_signature;
+  // A missing physician name must not suppress the approval section or stop
+  // the rest of the visit note from being generated.
+  if (note.treatmentApproved) {
+    fields.push({
+      label: "Physician Review & Approval",
+      layout: "physician-approval",
+      data: { physicianName: physician?.name || "N/A" },
+    });
+  }
+  const importedSigning = note.signatures as { base44TherapistSignedAt?: string; base44PatientSignedAt?: string } | null;
+  if (typeof therapistSignature === "string" || typeof patientSignature === "string" ||
+      importedSigning?.base44TherapistSignedAt || importedSigning?.base44PatientSignedAt) {
+    fields.push({ label: "Signatures", section: true });
+    if (Array.isArray(snapshot.library_documents) && snapshot.library_documents.length) {
+      fields.push({ label: "Attached Documents (Library)", value: snapshot.library_documents.map(String).join(", ") });
     }
-    if (typeof therapistSignature === "string" || typeof patientSignature === "string") {
-      fields.push({ label: "Signatures", section: true });
-      if (Array.isArray(snapshot.library_documents) && snapshot.library_documents.length) {
-        fields.push({ label: "Attached Documents (Library)", value: snapshot.library_documents.map(String).join(", ") });
-      }
-      if (typeof therapistSignature === "string") {
-        fields.push({ label: "Therapist Signature", imageDataUrl: therapistSignature });
-      }
-      if (snapshot.therapist_signature_timestamp) {
-        fields.push({ label: "Therapist Signed At", value: formatSignatureTimestamp(snapshot.therapist_signature_timestamp) });
-      }
-      if (typeof patientSignature === "string") {
-        fields.push({ label: "Patient Signature", imageDataUrl: patientSignature });
-      }
-      if (snapshot.patient_signature_timestamp) {
-        fields.push({ label: "Patient Signed At", value: formatSignatureTimestamp(snapshot.patient_signature_timestamp) });
-      }
+    if (typeof therapistSignature === "string") {
+      fields.push({ label: "Therapist Signature", imageDataUrl: therapistSignature });
     }
+    if (snapshot.therapist_signature_timestamp) {
+      fields.push({ label: "Therapist Signed At", value: formatSignatureTimestamp(snapshot.therapist_signature_timestamp) });
+    } else if (importedSigning?.base44TherapistSignedAt) {
+      fields.push({ label: "Therapist Signed At (Base44)", value: importedSigning.base44TherapistSignedAt });
+    }
+    if (typeof patientSignature === "string") {
+      fields.push({ label: "Patient Signature", imageDataUrl: patientSignature });
+    }
+    if (snapshot.patient_signature_timestamp) {
+      fields.push({ label: "Patient Signed At", value: formatSignatureTimestamp(snapshot.patient_signature_timestamp) });
+    } else if (importedSigning?.base44PatientSignedAt) {
+      fields.push({ label: "Patient Signed At (Base44)", value: importedSigning.base44PatientSignedAt });
+    }
+  }
+  return {
+    title: `Visit Note - ${note.patientName}`,
+    fields,
+    options: {
+      ...branding,
+      subtitle: `${humanize(note.therapyType.toLowerCase())} - ${humanize(note.visitType?.toLowerCase() || "visit")}`,
+      patientName: note.patientName,
+    },
+  };
+}
 
-    const companyInfo = await prisma.companyInfo.findFirst();
-    const configuredLogoPath = companyInfo?.logoUrl?.startsWith("/")
-      ? join(process.cwd(), "public", companyInfo.logoUrl)
-      : null;
-    const defaultLogoPath = join(process.cwd(), "public", "apex-rehab-logo.png");
-    const logoPath = configuredLogoPath && existsSync(configuredLogoPath)
-      ? configuredLogoPath
-      : existsSync(defaultLogoPath) ? defaultLogoPath : null;
-
+async function buildDocument(type: string, id: string) {
+  if (type === "visit") {
+    const note = await prisma.visitNote.findUnique({ where: { id }, include: visitPdfInclude });
+    if (!note) return null;
+    const branding = await visitPdfBranding();
     return {
       filename: `visit-note-${id}.pdf`,
-      buffer: await createVisitNotePdf(`Visit Note - ${note.patientName}`, fields, {
-        companyName: companyInfo?.companyName || "TherapyDocs",
-        subtitle: `${humanize(note.therapyType.toLowerCase())} - ${humanize(note.visitType?.toLowerCase() || "visit")}`,
-        patientName: note.patientName,
-        generatedDate: new Date().toLocaleDateString("en-US"),
-        logoPath,
-      }),
+      buffer: await createVisitNotesPdf([visitPdfContent(note, branding)]),
     };
   }
 
   if (type === "invoice") {
-    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { lineItems: { orderBy: [{ visitDate: "asc" }, { id: "asc" }] }, agency: { select: { vitalSignsConfig: true } } },
+    });
     if (!invoice) return null;
+    const config = invoice.agency?.vitalSignsConfig as { agency_preferences?: { invoice_terms?: string; invoice_footer?: string } } | null;
+    const preferences = config?.agency_preferences;
+    const date = (value: Date) => value.toISOString().slice(0, 10);
+    const disciplines: Record<string, string> = { physical: "PT", occupational: "OT", speech: "ST", pt: "PT", ot: "OT", st: "ST", slp: "ST" };
+    const visitLabels: Record<string, string> = { evaluation: "Eval", treatment: "Tx", re_evaluation: "Re-eval", recertification: "Recert", discharge_with_visit: "DC", discharge_without_visit: "DC" };
     return {
-      filename: `invoice-${invoice.invoiceNumber}.pdf`,
-      buffer: await createSimplePdf(`Invoice ${invoice.invoiceNumber}`, [
-        { label: "Agency", value: invoice.agencyName },
-        { label: "Period", value: `${invoice.dateFrom.toISOString().slice(0, 10)} - ${invoice.dateTo.toISOString().slice(0, 10)}` },
-        { label: "Total", value: `$${invoice.totalAmount}` },
-        { label: "Status", value: invoice.status },
-        { label: "Notes", value: invoice.notes },
-      ]),
+      filename: `${invoice.invoiceNumber}.pdf`,
+      buffer: await createInvoicePdf({
+        number: invoice.invoiceNumber,
+        agency: invoice.agencyName,
+        period: `${date(invoice.dateFrom)} – ${date(invoice.dateTo)}`,
+        status: invoice.status,
+        total: Number(invoice.totalAmount),
+        terms: preferences?.invoice_terms,
+        notes: !["Minimal", "None"].includes(preferences?.invoice_footer ?? "") ? invoice.notes : null,
+        rows: invoice.lineItems.map((item) => [
+          item.patientName,
+          date(item.visitDate),
+          item.therapistName,
+          disciplines[item.therapyType.toLowerCase().split(/[ _]/)[0]] ?? item.therapyType,
+          visitLabels[item.visitType.toLowerCase()] ?? humanize(item.visitType.toLowerCase()),
+          invoiceMoney(Number(item.rate)),
+        ]),
+      }),
     };
   }
 
   if (type === "invoice-notes") {
-    const invoice = await prisma.invoice.findUnique({ where: { id }, include: { lineItems: true } });
-    if (!invoice) return null;
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        lineItems: {
+          orderBy: [{ visitDate: "asc" }, { id: "asc" }],
+          include: { visitNote: { include: visitPdfInclude } },
+        },
+      },
+    });
+    if (!invoice?.lineItems.length) return null;
+
+    const branding = await visitPdfBranding();
+    const notes = new Map(invoice.lineItems.map(({ visitNote }) => [visitNote.id, visitNote]));
     return {
-      filename: `visit-notes-${invoice.invoiceNumber}.pdf`,
-      buffer: await createSimplePdf(`Visit Notes - ${invoice.invoiceNumber}`, invoice.lineItems.flatMap((item, index) => [
-        { label: `Visit ${index + 1} Patient`, value: item.patientName },
-        { label: "Date / Therapist", value: `${item.visitDate.toISOString().slice(0, 10)} / ${item.therapistName}` },
-        { label: "Discipline / Type", value: `${item.therapyType} / ${item.visitType}` },
-      ])),
+      filename: `${invoice.invoiceNumber}-visit-notes.pdf`,
+      buffer: await createVisitNotesPdf(Array.from(notes.values(), (note) => visitPdfContent(note, branding))),
     };
   }
   return null;
 }
 
 export async function GET(request: NextRequest) {
-  await requireAuth();
+  const user = await requireAuth();
   const type = request.nextUrl.searchParams.get("type") || "";
   const id = request.nextUrl.searchParams.get("id") || "";
+  if (type === "invoice-notes" && user.userType !== "SUPERUSER" && user.userType !== "ADMIN") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const result = await buildDocument(type, id);
   if (!result) return Response.json({ error: "Document not found" }, { status: 404 });
   return new Response(new Uint8Array(result.buffer), {
@@ -657,9 +705,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  await requireAuth();
+  const user = await requireAuth();
   const { type, id, recipient, subject, message } = await request.json();
   if (!recipient || !subject) return Response.json({ error: "Recipient and subject are required" }, { status: 400 });
+  if (type === "invoice-notes" && user.userType !== "SUPERUSER" && user.userType !== "ADMIN") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   const result = await buildDocument(type, id);
   if (!result) return Response.json({ error: "Document not found" }, { status: 404 });
 

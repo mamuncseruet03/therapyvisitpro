@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { findPayerRules } from "@/lib/payer-rules";
-import { createInvoice } from "./actions";
+import { createInvoice, getCompletedVisitsForInvoice } from "./actions";
 
 vi.mock("@/lib/db", () => ({
   prisma: { agency: { findUnique: vi.fn() }, visitNote: { findMany: vi.fn() }, invoice: { create: vi.fn() } },
@@ -35,4 +35,41 @@ it("recalculates the saved total for payer rates, including zero, and preserves 
   const { data } = prisma.invoice.create.mock.calls[0][0];
   expect(data.totalAmount).toBe(201);
   expect(data.lineItems.create.map(({ subtotal }) => subtotal)).toEqual([171, 0, 30]);
+});
+
+it("lists a legacy completed visit against its patient agency and preserves zero pricing", async () => {
+  prisma.visitNote.findMany.mockResolvedValue([
+    { id: "legacy", agencyId: null, patient: { agencyId: "agency" }, status: "COMPLETED", specialPrice: 0 },
+    { id: "assigned", agencyId: "original", patient: { agencyId: "different" }, status: "SIGNED" },
+    { id: "excluded", agencyId: "agency", status: "COMPLETED", nonBillable: true },
+  ]);
+
+  const visits = await getCompletedVisitsForInvoice();
+  expect(visits).toEqual([
+    expect.objectContaining({ id: "legacy", agency_id: "agency", special_price: 0 }),
+    expect.objectContaining({ id: "assigned", agency_id: "original" }),
+  ]);
+});
+
+it("includes a legacy visit through its patient agency when creating an invoice", async () => {
+  prisma.agency.findUnique.mockResolvedValue({ id: "agency", name: "Agency" });
+  prisma.visitNote.findMany.mockResolvedValue([{ id: "legacy", patient: { agencyId: "agency" } }]);
+  prisma.invoice.create.mockImplementation(async ({ data }) => ({ id: "legacy-invoice", totalAmount: data.totalAmount }));
+
+  await expect(createInvoice({
+    agency_id: "agency",
+    date_from: "2026-11-01",
+    date_to: "2026-11-30",
+    line_items: [{ visit_note_id: "legacy", visit_date: "2026-11-26", rate: 87.25, subtotal: 87.25 }],
+  })).resolves.toMatchObject({ id: "legacy-invoice" });
+
+  expect(prisma.visitNote.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+    where: {
+      id: { in: ["legacy"] },
+      OR: [{ agencyId: "agency" }, { agencyId: null, patient: { agencyId: "agency" } }],
+    },
+  }));
+  expect(prisma.invoice.create).toHaveBeenLastCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ totalAmount: 87.25 }),
+  }));
 });

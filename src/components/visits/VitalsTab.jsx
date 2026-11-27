@@ -12,6 +12,8 @@ import { getOutOfRangeVitals } from "@/lib/vital-limits";
 export default function VitalsTab({ form, set, vitalConfig }) {
   const enabled = vitalConfig?.enabled || ["blood_pressure", "heart_rate", "respiratory_rate", "temperature", "oxygen_saturation", "pain_assessment"];
   const outOfRange = getOutOfRangeVitals(form.vitals, vitalConfig);
+  const painSites = form.pain_sites ?? form.pain_assessment?.additionalSites ?? [];
+  const changeSite = (index, patch) => set("pain_sites", painSites.map((site, i) => i === index ? { ...site, ...patch } : site));
   return (
     <div className="space-y-6">
       <Card>
@@ -50,7 +52,31 @@ export default function VitalsTab({ form, set, vitalConfig }) {
         </CardContent>
       </Card>
 
-      {enabled.includes("pain_assessment") && <VisualAnalogueScale value={form.vas_pain_score ?? ""} onChange={(v) => set("vas_pain_score", v)} painLocation={form.pain_location || ""} onPainLocationChange={(v) => set("pain_location", v)} />}
+      {enabled.includes("pain_assessment") && (
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base font-semibold">Visual Analogue Scale (VAS) — Pain Assessment</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <VisualAnalogueScale siteNumber={1}
+              value={form.vas_pain_score ?? form.pain_assessment?.vasPainScore ?? ""}
+              onChange={(score) => set("vas_pain_score", score)}
+              painLocation={form.pain_location ?? form.pain_assessment?.location ?? ""}
+              onPainLocationChange={(location) => set("pain_location", location)} />
+            {painSites.map((site, index) => (
+              <VisualAnalogueScale key={site.id ?? index} siteNumber={index + 2} value={site.score}
+                painLocation={site.location} onChange={(score) => changeSite(index, { score })}
+                onPainLocationChange={(location) => changeSite(index, { location })}
+                onRemove={() => set("pain_sites", painSites.filter((_, i) => i !== index))} />
+            ))}
+            <Button type="button" variant="outline" onClick={() =>
+              set("pain_sites", [...painSites, { id: crypto.randomUUID(), location: "", score: "" }])}>Add Another Pain Site</Button>
+            <label className="grid gap-1 text-sm font-medium">
+              Intervention for Pain
+              <DictationTextarea aria-label="Intervention for Pain" value={form.pain_intervention ?? form.pain_assessment?.intervention ?? ""}
+                onChange={(event) => set("pain_intervention", event.target.value)} rows={2} />
+            </label>
+          </CardContent>
+        </Card>
+      )}
 
       {enabled.includes("pain_assessment") && <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base font-semibold text-slate-800">Pain Details</CardTitle></CardHeader>

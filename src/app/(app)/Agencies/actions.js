@@ -10,16 +10,6 @@ import { createAgencySchema, updateAgencySchema } from "@/lib/validations/agency
 
 const upper = (v) => (typeof v === "string" ? v.toUpperCase() : v);
 
-// Builds the object createAgencySchema/updateAgencySchema expect (camelCase,
-// upper-case enums) from the snake_case wire payload. Deliberately excludes
-// `rates`: createAgency/updateAgency below never persist it (agency rates
-// aren't wired up in this action file at all), so validating it would just
-// mask that gap rather than fix it. Contact rows with a blank name are
-// filtered out before validation, matching the filter already applied at
-// persist time (the "Add Contact" UI adds a blank row before it's filled in).
-// `supervisoryVisitFrequency` is left out when falsy/absent since the schema
-// requires a positive int — the UI sends an explicit `null` to clear it, which
-// updateAgency below handles separately against the raw payload.
 function toValidationInput(data) {
   return {
     name: data.name,
@@ -35,6 +25,7 @@ function toValidationInput(data) {
     supervisoryVisitFrequency: data.supervisory_visit_frequency || undefined,
     workWeekStartDay: data.work_week_start_day,
     requiredVisitDocuments: data.required_visit_documents,
+    rates: Array.isArray(data.rates) ? data.rates.map((rate) => ({ therapyType: rate.therapy_type, visitType: rate.visit_type, rate: rate.rate })) : undefined,
     notes: data.notes === null ? "" : data.notes,
     status: data.status ? upper(data.status) : undefined,
     contacts: Array.isArray(data.contacts)
@@ -70,6 +61,7 @@ function toSnakeCase(a) {
     vital_signs_config: a.vitalSignsConfig,
     required_visit_documents: a.requiredVisitDocuments || [],
     agency_documents: a.agencyDocuments,
+    documents: a.agencyDocuments || [],
     notes: a.notes,
     status: a.status?.toLowerCase(),
     contacts: (a.contacts || []).map(c => ({
@@ -115,6 +107,22 @@ export async function getAgencyById(id) {
   return agency ? toSnakeCase(agency) : null;
 }
 
+function agencyVitalConfig(config, data, savedPreferences = {}) {
+  const preferences = { ...savedPreferences };
+  for (const key of agencyContactFields) {
+    if (typeof data[key] === "string") preferences[key] = data[key].trim().slice(0, 60);
+  }
+  return Object.keys(preferences).length ? { ...config, agency_preferences: preferences } : config || undefined;
+}
+
+function agencyDocumentList(data) {
+  const documents = data.documents ?? data.agency_documents;
+  if (!Array.isArray(documents)) return undefined;
+  return documents.filter((document) =>
+    typeof document?.name === "string" && typeof document.url === "string" && /^(?:\/uploads\/|https:\/\/)/i.test(document.url))
+    .map(({ name, url, type, uploaded_date }) => ({ name, url, type, uploaded_date }));
+}
+
 export async function createAgency(data) {
   const user = await requireRole("SUPERUSER", "ADMIN");
 
@@ -140,7 +148,10 @@ export async function createAgency(data) {
       assistantsAllowed: v.assistantsAllowed !== false,
       supervisoryVisitFrequency: v.supervisoryVisitFrequency || null,
       documentationSetup: data.documentation_setup || null,
-      vitalSignsConfig: data.vital_signs_config || null,
+      vitalSignsConfig: agencyVitalConfig(data.vital_signs_config, data),
+      agencyDocuments: agencyDocumentList(data),
+      workWeekStartDay: v.workWeekStartDay,
+      rates: v.rates?.length ? { create: v.rates } : undefined,
       requiredVisitDocuments: v.requiredVisitDocuments || [],
       contacts: v.contacts?.length ? {
         create: v.contacts.map(c => ({
@@ -201,12 +212,19 @@ export async function updateAgency(id, data) {
       updateData.supervisoryVisitFrequency = v.supervisoryVisitFrequency ?? null;
     }
     if (data.documentation_setup !== undefined) updateData.documentationSetup = data.documentation_setup;
-    if (data.vital_signs_config !== undefined) {
+    if (data.vital_signs_config !== undefined || agencyContactFields.some((key) => key in data)) {
       const agency = await tx.agency.findUniqueOrThrow({ where: { id }, select: { vitalSignsConfig: true } });
-      const preferences = agency.vitalSignsConfig?.agency_preferences;
-      updateData.vitalSignsConfig = preferences
-        ? { ...data.vital_signs_config, agency_preferences: preferences }
-        : data.vital_signs_config;
+      updateData.vitalSignsConfig = agencyVitalConfig(
+        data.vital_signs_config ?? agency.vitalSignsConfig,
+        data,
+        agency.vitalSignsConfig?.agency_preferences,
+      );
+    }
+    const documents = agencyDocumentList(data);
+    if (documents !== undefined) updateData.agencyDocuments = documents;
+    if (v.rates !== undefined) {
+      await tx.agencyRate.deleteMany({ where: { agencyId: id } });
+      if (v.rates.length) updateData.rates = { create: v.rates };
     }
     if (v.requiredVisitDocuments !== undefined) updateData.requiredVisitDocuments = v.requiredVisitDocuments;
     if (v.workWeekStartDay !== undefined) updateData.workWeekStartDay = v.workWeekStartDay;

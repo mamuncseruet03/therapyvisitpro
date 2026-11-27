@@ -3,7 +3,16 @@ import { revalidatePath } from "next/cache";
 import { loadVitalAlerts, resolveVitalAlert } from "./actions";
 
 export default async function CommunicationsPage() {
-  const alerts = await loadVitalAlerts();
+  let alerts;
+  try {
+    alerts = await loadVitalAlerts();
+  } catch (error) {
+    if (error?.code !== "P2022") throw error;
+    return <main className="space-y-2">
+      <h1 className="text-2xl font-bold">Communications</h1>
+      <p role="alert">Vital alerts are unavailable until the database update is applied.</p>
+    </main>;
+  }
   return (
     <main className="space-y-6">
       <h1 className="text-2xl font-bold">Communications</h1>

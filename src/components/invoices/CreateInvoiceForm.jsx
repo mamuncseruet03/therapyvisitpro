@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "sonner";
 import { FileText, DollarSign } from "lucide-react";
 import { getAgenciesForInvoice, getCompletedVisitsForInvoice, createInvoice } from "@/lib/api-client/invoices";
 
@@ -33,12 +34,14 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
   const [notes, setNotes] = useState("");
   const [selectedVisitIds, setSelectedVisitIds] = useState(new Set());
   const [rateOverrides, setRateOverrides] = useState({});
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [agencies, setAgencies] = useState([]);
   const [allVisits, setAllVisits] = useState([]);
 
   const loadFormData = useCallback(async () => {
+    setLoadError(false);
     try {
       const [agencyData, visitData] = await Promise.all([
         getAgenciesForInvoice(),
@@ -46,8 +49,8 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
       ]);
       setAgencies(agencyData);
       setAllVisits(visitData);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setLoadError(true);
     }
   }, []);
 
@@ -79,7 +82,7 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
     if (visit.payer_rate != null) return visit.payer_rate;
     return rateOverrides[visit.id] !== undefined
       ? parseFloat(rateOverrides[visit.id]) || 0
-      : getAgencyRate(visit);
+      : visit.special_price ?? getAgencyRate(visit);
   };
 
   // Select all / deselect all
@@ -117,21 +120,29 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
       subtotal: getEffectiveRate(v),
     }));
 
-    await createInvoice({
-      agency_id: agencyId,
-      date_from: dateFrom,
-      date_to: dateTo,
-      total_amount: totalAmount,
-      notes: notes || null,
-      line_items: lineItems,
-    });
-
-    setSaving(false);
-    onSaved();
+    try {
+      await createInvoice({
+        agency_id: agencyId,
+        date_from: dateFrom,
+        date_to: dateTo,
+        total_amount: totalAmount,
+        notes: notes || null,
+        line_items: lineItems,
+      });
+      onSaved();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create invoice.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-6 max-w-5xl">
+      {loadError && <div role="alert" className="space-x-2 text-sm text-red-700">
+        <span>Could not load agencies or completed visits.</span>
+        <Button type="button" variant="outline" onClick={loadFormData}>Retry</Button>
+      </div>}
       {/* Step 1: Select Agency & Dates */}
       <Card>
         <CardHeader className="pb-3">
@@ -176,6 +187,8 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
       </Card>
 
       {/* Step 2: Select Visits */}
+      {selectedAgency?.billing_schedule && <p className="text-sm text-slate-600">Agency billing schedule · {selectedAgency.billing_schedule}</p>}
+
       {agencyId && dateFrom && dateTo && (
         <Card>
           <CardHeader className="pb-3">
@@ -232,7 +245,7 @@ export default function CreateInvoiceForm({ onSaved, initialAgencyId = "", initi
                             min="0"
                             step="0.01"
                             className="h-8 w-24 text-sm"
-                            value={v.payer_rate ?? rateOverrides[v.id] ?? getAgencyRate(v)}
+                            value={v.payer_rate ?? rateOverrides[v.id] ?? v.special_price ?? getAgencyRate(v)}
                             readOnly={v.payer_rate != null}
                             title={v.payer_rate != null ? "Payer special rate" : undefined}
                             onChange={(e) => setRateOverrides((prev) => ({ ...prev, [v.id]: e.target.value }))}

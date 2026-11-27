@@ -1,5 +1,8 @@
 "use client";
 
+import { identifierKey, PATIENT_IDENTIFIERS, patientIdentifierLabel, minimumIdentifiers, selectedIdentifierLabels } from "@/lib/visit-identification";
+import Icd10Lookup from "@/components/patients/Icd10Lookup";
+
 import React, { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +15,18 @@ import { X, Plus, FileUp, MapPin } from "lucide-react";
 import DoorPhotoCapture from "./DoorPhotoCapture";
 
 export default function IntakeTab({ form, set, patients = [], therapists = [], isAdmin, isAssistant, agencyDocsOnly, patientAgencyName }) {
+  const [identifierDraft, setIdentifierDraft] = useState("");
+  const identifiers = form.patient_identification || {};
+  const selectedIdentifiers = selectedIdentifierLabels(identifiers).length;
+  const requiredIdentifiers = minimumIdentifiers(form.therapy_type, form.visit_type);
+  const identifierRows = [...Object.keys(PATIENT_IDENTIFIERS), ...Object.keys(identifiers).filter((key) => !Object.hasOwn(PATIENT_IDENTIFIERS, key))];
+  const customLabel = identifierDraft.trim();
+  const canAddIdentifier = identifierKey(customLabel) && !identifierRows.some((key) => identifierKey(patientIdentifierLabel(key)) === identifierKey(customLabel));
+  function addIdentifier() {
+    if (!canAddIdentifier) return;
+    set("patient_identification", { ...identifiers, [`custom:${customLabel}`]: false });
+    setIdentifierDraft("");
+  }
   const [punchingIn, setPunchingIn] = useState(false);
   const [unableToPunchIn, setUnableToPunchIn] = useState(false);
   const [manualTimeIn, setManualTimeIn] = useState("");
@@ -55,7 +70,7 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Patient <span className="text-red-500">★</span></Label>
-              <Select value={form.patient_id} onValueChange={(v) => { set("patient_id", v); const p = patients.find((x) => x.id === v); if (p?.agency) set("agency", p.agency); }}>
+              <Select value={form.patient_id} onValueChange={(v) => { set("patient_id", v); const p = patients.find((x) => x.id === v); set("agency", p?.agency || ""); set("agency_id", p?.agency_id || null); }}>
                 <SelectTrigger><SelectValue placeholder="Select patient" /></SelectTrigger>
                 <SelectContent>{patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.first_name} {p.last_name}</SelectItem>)}</SelectContent>
               </Select>
@@ -277,6 +292,12 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
           <div>
             <Label>Medical Diagnosis</Label>
             <div className="space-y-2">
+              <Icd10Lookup onSelect={(match) => {
+                const diagnoses = form.medical_diagnoses || [];
+                if (!diagnoses.some((item) => item.icd10_code?.toUpperCase() === match.icd10_code)) {
+                  set("medical_diagnoses", [...diagnoses, match]);
+                }
+              }} />
               <div className="grid grid-cols-[2fr_1fr_auto] gap-2">
                 <Input placeholder="Enter diagnosis..." value={diagnosisInput} onChange={(e) => set("medical_diagnosis_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
                 <Input placeholder="ICD-10 code" value={icd10Input} onChange={(e) => set("medical_diagnosis_icd10_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDiagnosis())} />
@@ -298,6 +319,12 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
           <div>
             <Label>Treatment Diagnosis</Label>
             <div className="space-y-2">
+              <Icd10Lookup onSelect={(match) => {
+                const diagnoses = form.treatment_diagnoses || [];
+                if (!diagnoses.some((item) => item.icd10_code?.toUpperCase() === match.icd10_code)) {
+                  set("treatment_diagnoses", [...diagnoses, match]);
+                }
+              }} />
               <div className="grid grid-cols-[2fr_1fr_auto] gap-2">
                 <Input placeholder="Enter treatment diagnosis..." value={treatmentDiagnosisInput} onChange={(e) => set("treatment_diagnosis_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
                 <Input placeholder="ICD-10 code" value={treatmentIcd10Input} onChange={(e) => set("treatment_diagnosis_icd10_draft", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTreatmentDiagnosis())} />
@@ -323,21 +350,32 @@ export default function IntakeTab({ form, set, patients = [], therapists = [], i
           <CardTitle className="text-base font-semibold text-slate-800">Patient Identification <span className="text-red-500 text-sm">★</span></CardTitle>
         </CardHeader>
         <CardContent>
-          {!Object.values(form.patient_identification || {}).some(Boolean) && (<p className="text-xs text-red-500 mb-2">Select at least one identification method</p>)}
+          <p role="status" className="mb-2 text-sm">{selectedIdentifiers} selected</p>
+          {selectedIdentifiers < requiredIdentifiers && <p className="mb-2 text-xs text-red-600">
+            {requiredIdentifiers === 2 ? "Select at least two identification methods" : "Select at least one identification method"}
+          </p>}
           <div className="space-y-2">
-            {[
-              { key: "date_of_birth", label: "Date of Birth" }, { key: "address", label: "Address" },
-              { key: "facial_recognition", label: "Facial Recognition" }, { key: "family_member_verify", label: "Family Member Verify" },
-              { key: "ssn", label: "SSN#" },
-            ].map(({ key, label }) => {
-              const checked = (form.patient_identification || {})[key] || false;
+            {identifierRows.map((key) => {
+              const label = patientIdentifierLabel(key);
               return (
-                <label key={key} className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={checked} onChange={(e) => set("patient_identification", { ...(form.patient_identification || {}), [key]: e.target.checked })} className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer" />
-                  <span className="text-sm text-slate-700">{label}</span>
-                </label>
+                <div key={key} className="flex items-center gap-2">
+                  <label className="flex items-center gap-3 text-sm">
+                    <input type="checkbox" checked={identifiers[key] === true} onChange={(event) =>
+                      set("patient_identification", { ...identifiers, [key]: event.target.checked })} />
+                    {label}
+                  </label>
+                  {key.startsWith("custom:") && <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${label}`}
+                    onClick={() => set("patient_identification", Object.fromEntries(Object.entries(identifiers).filter(([id]) => id !== key)))}>Remove</Button>}
+                </div>
               );
             })}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <Input placeholder="Add another identifier (e.g. Photo ID)" maxLength={100} value={identifierDraft}
+              onChange={(event) => setIdentifierDraft(event.target.value)} onKeyDown={(event) => {
+                if (event.key === "Enter") { event.preventDefault(); addIdentifier(); }
+              }} />
+            <Button type="button" variant="outline" onClick={addIdentifier} disabled={!canAddIdentifier}>Add Identifier</Button>
           </div>
         </CardContent>
       </Card>
